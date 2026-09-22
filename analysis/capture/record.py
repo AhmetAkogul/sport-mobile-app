@@ -61,6 +61,7 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None, sour
     _write_json(output / "session.json", metadata)
     handles = []
     pending = output / ".pending"
+    primary_error = None
     try:
         for camera in config.cameras:
             handle = factory(camera.source)
@@ -121,6 +122,7 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None, sour
             else:
                 metadata["status"] = "completed"
     except BaseException as exc:
+        primary_error = exc
         metadata.update(status="interrupted" if isinstance(exc, KeyboardInterrupt) else "failed",
                         error=f"{type(exc).__name__}: {exc}")
         raise
@@ -130,12 +132,22 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None, sour
                 handle.release()
             except Exception as exc:
                 metadata.setdefault("cleanup_errors", []).append(f"{type(exc).__name__}: {exc}")
-        if metadata.get("cleanup_errors") and metadata["status"] == "completed":
-            metadata["status"] = "failed"
         if pending.exists():
-            shutil.rmtree(pending)
+            try:
+                shutil.rmtree(pending)
+            except Exception as exc:
+                metadata.setdefault("cleanup_errors", []).append(f"{type(exc).__name__}: {exc}")
+                if primary_error is not None:
+                    primary_error.add_note(f"Yarım grup temizlenemedi: {exc}")
+        if metadata.get("cleanup_errors") and metadata["status"] in {"completed", "source_stopped"}:
+            metadata["status"] = "failed"
         metadata["finished_at_utc"] = _utc()
-        _write_json(output / "session.json", metadata)
+        try:
+            _write_json(output / "session.json", metadata)
+        except Exception as exc:
+            if primary_error is None:
+                raise
+            primary_error.add_note(f"Oturumun son durumu diske yazılamadı: {exc}")
     return metadata
 
 

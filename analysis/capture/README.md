@@ -126,7 +126,8 @@ Capture bütünüyle tamamlanmış değildir. Açık kabul işleri:
 - [x] Çözünürlük/FPS uygulama ve sürücüden geri okuma altyapısı. Gerçek kamera testi açık.
 - [x] Yerel videoları OpenCV POS_MSEC ve açık ofsetlerle eşleştiren ayrı plan üretimi. Eşleşmiş görüntü okuyucusu eklendi; doğrudan PTS okuyucu ve VFR doğrulaması henüz yok.
 - [ ] Donanım/sensör zaman damgaları ve gerçek kameralar arası kayma ölçümü.
-- [ ] Uzun süreli çok kameralı yük, disk dolması ve fiziksel kesinti deneyi.
+- [x] Dört yerel kaynakla 300 grup/1200 görüntü kaydı ve sentetik disk dolması hata testleri.
+- [ ] Uzun süreli gerçek kamera yükü, gerçek disk dolması ve fiziksel kesinti deneyi.
 
 Bu turda gerçek kamera açılmadı; fiziksel kabul kapıları kapanmadı.
 
@@ -289,3 +290,33 @@ ve erken çıkışta kaynakların kapanması sınandı. VFR, telefon kodekleri v
 kamera senkronizasyonu hâlâ açık kabul işleridir.
 
 Bu güncelleme sonunda capture ve metrik testlerinin toplamı: **147 geçti**.
+
+## Dört kaynaklı doğrulama ve disk hataları — 22 Eylül güncellemesi
+
+```bash
+python -m capture.validate --output data/yeni-dogrulama --cameras 4 --frames 300
+```
+
+Araç yeni çıktı dizininde numaralı MJPG videolar oluşturur, süreç yalıtımlı kayıt
+hattından geçirir ve kaydedilen PNG'leri kaynak videolardan yeniden çözülen
+karelerle piksel düzeyinde karşılaştırır. Kaynaklar ve kayıtlar data altında
+kalır. `validation.json` yalnızca tüm kontroller geçince yazılır. Mevcut dizine
+tekrar yazılmaz. Kodlayıcı kayıpları nedeniyle karşılaştırma ham sentetik resme
+değil, kaynak videonun çözülen resmine karşı yapılır.
+
+Bu makinedeki koşu: 4 kaynak, 320×240, kaynak başına 300 kare; **1200 görüntü
+birebir doğrulandı**. Kayıt aşaması 1.138 saniye, kayıt dosyaları 6,225,847 bayt.
+Bu süre kaynak üretimini/son doğrulamayı içermez; önceden kaydedilmiş dosyalar
+çevrimdışı okundu. Sonuç gerçek kamera FPS'si, senkron kayması veya uzun süreli
+kararlılık ölçümü değildir.
+
+Disk hata testlerinde ikinci grupta ENOSPC, ardından son meta veri yazımında
+ENOSPC; yarım grup temizleme izni reddi; başarılı kare yazımından sonra son durum
+kaydı hatası enjekte edildi. Asıl hata artık kapanış hatasıyla gizlenmez; ek hata
+exception notu olarak korunur. Kaynaklar serbest bırakılır, tam gruplar korunur.
+Disk gerçekten doluysa son durum dosyası yazılamayabilir ve oturum `recording`
+görünebilir. Bu durumda yer açıldıktan sonra `capture.recover` ile yeni dizine
+kurtarma yapılır. Güç kesilmesi ve gerçek disk doldurma denenmedi.
+
+Bu tur sonunda capture/metrik testlerinin toplamı **150 geçti**. Ayrıca dört
+kaynaklı doğrulama koşusu başarılı. Var olan `.venv` bağlantısı değiştirilmedi.

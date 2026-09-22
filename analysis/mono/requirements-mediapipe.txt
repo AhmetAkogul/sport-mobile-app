@@ -1,0 +1,3 @@
+# İsteğe bağlı deney ortamı; ana kalibrasyon ortamına otomatik kurulmaz.
+-r ../requirements.txt
+mediapipe==0.10.35
