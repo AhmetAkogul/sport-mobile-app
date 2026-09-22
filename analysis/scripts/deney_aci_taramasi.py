@@ -91,12 +91,12 @@ def cizim(satirlar: list[dict], hedef: Path) -> None:
              marker="^", ls="--", color="#2ca02c",
              label="belirsizliğini bilen telefon: karar verdiği oran")
     ust.axhline(0.5, color="#888", ls=":", lw=1)
-    ust.text(1, 0.52, "yazı tura", fontsize=8, color="#666")
+    ust.text(1.5, 0.52, "yazı tura", fontsize=8, color="#666")
     ust.set_ylim(-0.03, 1.05)
     ust.set_ylabel("oran")
     ust.set_title("Form kararı doğruluğu vs kamera açısı (diz valgusu)")
     ust.grid(alpha=0.25)
-    ust.legend(fontsize=8, loc="center left")
+    ust.legend(fontsize=8, loc="upper right", framealpha=0.9)
 
     alt.plot(x, [s["sekil_hatasi_mm"] for s in satirlar], marker="o", color="#9467bd")
     alt.set_yscale("log")

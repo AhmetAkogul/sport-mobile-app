@@ -1,0 +1,6 @@
+# İzole RTMPose ortamı. RTMLib ayrı --no-deps kurulur; README gerekçeyi açıklar.
+opencv-contrib-python==5.0.0.93
+numpy==2.5.3
+onnxruntime==1.30.0
+tqdm==4.70.1
+scipy==1.18.1

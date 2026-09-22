@@ -24,16 +24,23 @@ yerine acik hata verilir.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 
 import numpy as np
 
 from calib.io import Kabin
 
 
-def _tarih_anahtari(iso: str) -> datetime:
-    """ISO 8601'i siralama anahtarina cevir; karisik 'Z'/'+00:00' kalabilir."""
-    return datetime.fromisoformat(iso.replace("Z", "+00:00"))
+def tarih_coz(iso: str) -> datetime:
+    """ISO 8601'i siralanabilir, saat dilimi bilinen tarihe cevir.
+
+    Iki tuzak kapaniyor: 'Z' soneki `fromisoformat` icin normallestiriliyor, ve
+    saat dilimi tasimayan kayit UTC kabul ediliyor. Ikincisi olmazsa, kayitlarin
+    bir kismi dilimli bir kismi dilimsizse siralama TypeError ile patlar --
+    gercek kayit klasorlerinde karisik format sik gorulur.
+    """
+    t = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    return t if t.tzinfo is not None else t.replace(tzinfo=timezone.utc)
 
 
 def _olcumler(kabin: Kabin) -> dict[str, float]:
@@ -89,7 +96,7 @@ class SuruklenmeEgrisi:
         """Ilk ve son olcum arasindaki gun sayisi (>= 0)."""
         if self.n_nokta < 2:
             return 0.0
-        t = sorted(_tarih_anahtari(x) for x in self.tarihler)
+        t = sorted(tarih_coz(x) for x in self.tarihler)
         return (t[-1] - t[0]).total_seconds() / 86400.0
 
     def en_buyuk_suruklenme(self) -> tuple[str, float]:
@@ -146,7 +153,7 @@ def egri_olustur(kabinler: list[Kabin]) -> SuruklenmeEgrisi:
     """
     if not kabinler:
         raise ValueError("suruklenme egrisi icin en az bir kayit gerekli")
-    sirali = sorted(kabinler, key=lambda k: _tarih_anahtari(k.meta.tarih_iso))
+    sirali = sorted(kabinler, key=lambda k: tarih_coz(k.meta.tarih_iso))
 
     ilk = _olcumler(sirali[0])
     n_kamera = len(sirali[0].Ks)
