@@ -173,3 +173,67 @@ def sahne_uret(
                 img_noktalari[ci].append(np.empty((0, 1, 2), dtype=np.float32))
 
     return Sahne(obj_noktalari, img_noktalari, mask, kameralar, gurultu_px)
+
+
+def dunyadan_kamera0(kameralar: list[Kamera], noktalar: np.ndarray) -> np.ndarray:
+    """Dunya koordinatindaki noktalari kamera 0 sistemine tasi.
+
+    Kalibrasyon sonuclari kamera 0 referanslidir (`calib.multiview`), dolayisiyla
+    triangulation ciktisi da oradadir. Yer gercegiyle karsilastirmak icin gercek
+    noktalari ayni sisteme tasimak gerekir; yoksa sabit bir donusum farki hata
+    gibi gorunur.
+    """
+    k0 = kameralar[0]
+    n = np.asarray(noktalar, dtype=np.float64).reshape(-1, 3)
+    return (k0.R @ n.T + k0.t).T
+
+
+def olculu_cubuk(
+    uzunluk_m: float = 1.0,
+    n_isaret: int = 5,
+    merkez: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    yon: tuple[float, float, float] = (1.0, 0.0, 0.0),
+) -> tuple[np.ndarray, list[tuple[int, int, float]]]:
+    """Uzerinde olculu isaretler olan sert cubuk -- bilinen mesafe duzenegi.
+
+    `PROJE-PLANI.md` Faz 2: sistemin olctugu mesafe ile gercek mesafe farki 3B
+    dogrulugun kanitidir ve serit metreyle dogrulanabilir olmasi juri demosunun
+    temelidir. Burada onun sentetik esdegeri uretilir.
+
+    Dondurur: (3B isaret noktalari, (i, j, gercek_mesafe_m) ucluleri)
+    """
+    if n_isaret < 2:
+        raise ValueError("cubukta en az 2 isaret olmali")
+    y = np.asarray(yon, dtype=np.float64)
+    y = y / np.linalg.norm(y)
+    m = np.asarray(merkez, dtype=np.float64)
+    adim = uzunluk_m / (n_isaret - 1)
+    noktalar = np.array([m + y * (i * adim - uzunluk_m / 2) for i in range(n_isaret)])
+    mesafeler = [(i, j, float(abs(j - i) * adim))
+                 for i in range(n_isaret) for j in range(i + 1, n_isaret)]
+    return noktalar, mesafeler
+
+
+def nokta_gozlemleri(
+    kameralar: list[Kamera],
+    noktalar: np.ndarray,
+    gurultu_px: float = 0.0,
+    seed: int = 0,
+) -> list[dict[int, np.ndarray]]:
+    """Her 3B noktayi her kameraya izdusur. Kadraj disi kalan kamera sozlukte yok."""
+    rng = np.random.default_rng(seed + 31337)
+    n = np.asarray(noktalar, dtype=np.float64).reshape(-1, 3)
+    cikti: list[dict[int, np.ndarray]] = []
+    for X in n:
+        gozlem: dict[int, np.ndarray] = {}
+        for ci, kam in enumerate(kameralar):
+            p, _ = cv2.projectPoints(X.reshape(1, 3), cv2.Rodrigues(kam.R)[0],
+                                     kam.t, kam.K, None)
+            p = p.reshape(2)
+            if gurultu_px:
+                p = p + rng.normal(0.0, gurultu_px, 2)
+            g, y = kam.boyut
+            if 0 <= p[0] < g and 0 <= p[1] < y:
+                gozlem[ci] = p
+        cikti.append(gozlem)
+    return cikti
