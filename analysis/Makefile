@@ -15,6 +15,7 @@ reproduce:        ## Rapordaki tum sayilari yeniden uret
 	$(PYTHON) -m eval.report
 	$(PYTHON) scripts/deney_sentetik_kalibrasyon.py
 	$(PYTHON) scripts/deney_triangulasyon_butcesi.py
+	$(PYTHON) scripts/deney_hacim_haritasi.py
 
 temiz:
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

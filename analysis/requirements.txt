@@ -1,5 +1,8 @@
-# OpenCV 5 — calibrateMultiview bu surumde geldi
-opencv-python==5.0.0.93
+# OpenCV 5 — calibrateMultiview bu surumde geldi.
+# contrib paketi tercih ediliyor: MediaPipe onu bagimlilik olarak cekiyor ve
+# ikisi ayni cv2 modulunu sagladigi icin yan yana duramazlar. Ayni surum,
+# calibrateMultiview dahil her sey var. Gerekce: docs/kararlar/0008
+opencv-contrib-python==5.0.0.93
 numpy>=2.0
 scipy>=1.14
 pyyaml>=6.0
