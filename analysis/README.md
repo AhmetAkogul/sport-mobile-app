@@ -58,3 +58,11 @@ Depo iskeleti kurulu, ortam doğrulandı (Python 3.13 + OpenCV 5.0.0, `make kont
 `make reproduce` bilinen yapay nokta hatalarının JSON özetini üretir; gerçek
 kalibrasyon raporu değildir. [Geliştirme kaydı](docs/deney/2026-09-22-metric-baseline.md).
 Sıradaki iş: ChArUco üretimi ve tespiti, ardından sentetik kalibrasyon doğrulaması.
+
+## Hazır teknoloji entegrasyonu
+
+Roboflow, Supervision, hazır poz modelleri ve diğer araçların görevleri ile
+ortak veri sözleşmesi [HAZIR-TEKNOLOJILER.md](HAZIR-TEKNOLOJILER.md) içinde.
+Yeni modül veya bağımlılık eklemeden önce bu belgeyi okuyun. Hazır araçları
+uygun yerde kullanın; model çıktısını kamera/kare kimliği ve koordinat sistemiyle
+birlikte aktarın. Aday araçların entegrasyonu henüz tamamlanmış değildir.

@@ -3,13 +3,17 @@
 import argparse
 from datetime import datetime, timezone
 import json
+import math
 from pathlib import Path
 import shutil
 import time
 
 import cv2
+import numpy as np
 
 from capture.session import SessionConfig
+from capture.source import ProcessCapture
+from capture.settings import configure_source
 
 
 def _utc():
@@ -22,7 +26,7 @@ def _write_json(path, value):
     temporary.replace(path)
 
 
-def record_session(config, output_dir, *, max_frames, capture_factory=None):
+def record_session(config, output_dir, *, max_frames, capture_factory=None, source_timeout_s=5.0, open_timeout_s=15.0):
     """Yeni dizine PNG grupları, session.json ve frames.jsonl yazar.
 
     Tüm kaynaklar önce grab, sonra retrieve edilir. Zamanlar ana bilgisayarın
@@ -35,7 +39,11 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None):
         raise ValueError("Doğrulanmış SessionConfig gerekli.")
     if type(max_frames) is not int or max_frames <= 0:
         raise ValueError("max_frames pozitif tamsayı olmalı.")
-    factory = capture_factory or cv2.VideoCapture
+    for value in (source_timeout_s, open_timeout_s):
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            raise ValueError("Zaman aşımı sonlu pozitif saniye olmalı.")
+    factory = capture_factory or (lambda source: ProcessCapture(
+        source, timeout_s=source_timeout_s, open_timeout_s=open_timeout_s))
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=False)
     batches = output / "batches"
@@ -45,6 +53,10 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None):
         "status": "recording", "completed_batches": 0,
         "timestamp_semantics": "host_monotonic_grab_interval_not_exposure_time",
         "hardware_synchronized": False,
+        "camera_settings": {},
+        "source_isolation": "process" if capture_factory is None else "custom_factory",
+        "source_timeout_s": source_timeout_s if capture_factory is None else None,
+        "open_timeout_s": open_timeout_s if capture_factory is None else None,
     }
     _write_json(output / "session.json", metadata)
     handles = []
@@ -55,6 +67,12 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None):
             handles.append(handle)
             if not handle.isOpened():
                 raise RuntimeError(f"Kaynak açılamadı: {camera.camera_id}")
+            settings_report = configure_source(handle, camera)
+            metadata["camera_settings"][camera.camera_id] = settings_report
+            _write_json(output / "session.json", metadata)
+            if settings_report["issues"]:
+                raise ValueError(f"Kamera ayarları doğrulanamadı: {camera.camera_id}: "
+                                 + "; ".join(settings_report["issues"]))
         with (output / "frames.jsonl").open("x", encoding="utf-8") as index:
             for batch_id in range(max_frames):
                 timings = []
@@ -75,6 +93,12 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None):
                     ok, frame = handle.retrieve()
                     if not ok or frame is None or frame.size == 0:
                         raise RuntimeError(f"Kare çözülemedi: {camera.camera_id}")
+                    if (not isinstance(frame, np.ndarray) or frame.dtype != np.uint8
+                            or frame.ndim != 3 or frame.shape[2] != 3):
+                        raise ValueError(f"Kare BGR uint8 olmalı: {camera.camera_id}")
+                    if ((camera.width is not None and frame.shape[1] != camera.width)
+                            or (camera.height is not None and frame.shape[0] != camera.height)):
+                        raise ValueError(f"Gerçek kare boyutu istenen ayarla uyuşmuyor: {camera.camera_id}")
                     frames.append(frame)
                 pending.mkdir()
                 rows = []
@@ -104,8 +128,10 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None):
         for handle in handles:
             try:
                 handle.release()
-            except Exception:
-                pass
+            except Exception as exc:
+                metadata.setdefault("cleanup_errors", []).append(f"{type(exc).__name__}: {exc}")
+        if metadata.get("cleanup_errors") and metadata["status"] == "completed":
+            metadata["status"] = "failed"
         if pending.exists():
             shutil.rmtree(pending)
         metadata["finished_at_utc"] = _utc()
@@ -118,8 +144,11 @@ def main():
     parser.add_argument("--config", required=True, help="Oturum JSON dosyası")
     parser.add_argument("--output", required=True, help="Yeni kayıt dizini; data/ altında tutun")
     parser.add_argument("--max-frames", required=True, type=int)
+    parser.add_argument("--source-timeout", type=float, default=5.0, help="Kaynak çağrısı sınırı (saniye)")
+    parser.add_argument("--open-timeout", type=float, default=15.0, help="Kaynak açma sınırı (saniye)")
     args = parser.parse_args()
-    result = record_session(SessionConfig.from_json(args.config), args.output, max_frames=args.max_frames)
+    result = record_session(SessionConfig.from_json(args.config), args.output, max_frames=args.max_frames,
+                            source_timeout_s=args.source_timeout, open_timeout_s=args.open_timeout)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["status"] == "completed" else 2
 

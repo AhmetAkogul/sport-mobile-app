@@ -2,6 +2,7 @@
 
 from dataclasses import asdict, dataclass
 import json
+import math
 from pathlib import Path
 import re
 
@@ -16,6 +17,9 @@ class CameraConfig:
     camera_id: str
     source: int | str
     settings: str
+    width: int | None = None
+    height: int | None = None
+    fps: float | None = None
 
     def __post_init__(self):
         if not isinstance(self.camera_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", self.camera_id):
@@ -27,6 +31,13 @@ class CameraConfig:
         if isinstance(self.source, str):
             _text(self.source, "source")
         _text(self.settings, "Kamera ayarları")
+        for name in ("width", "height"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value <= 0):
+                raise ValueError(f"{name} pozitif tamsayı olmalı.")
+        if self.fps is not None and (type(self.fps) not in (int, float)
+                or not math.isfinite(self.fps) or self.fps <= 0):
+            raise ValueError("fps sonlu pozitif sayı olmalı.")
 
 
 @dataclass(frozen=True)
@@ -42,7 +53,7 @@ class SessionConfig:
         object.__setattr__(self, "cameras", tuple(self.cameras))
         if not self.cameras or not all(isinstance(c, CameraConfig) for c in self.cameras):
             raise ValueError("En az bir CameraConfig gerekli.")
-        ids = [c.camera_id for c in self.cameras]
+        ids = [c.camera_id.casefold() for c in self.cameras]
         sources = [c.source for c in self.cameras]
         if len(set(ids)) != len(ids) or len(set(sources)) != len(sources):
             raise ValueError("Kamera kimlikleri ve kaynakları benzersiz olmalı.")

@@ -186,3 +186,22 @@ def test_interrupt_preserves_completed_groups(tmp_path):
     assert state["completed_batches"] == 1
     assert len(list((tmp_path / "session/batches").glob("*/*.png"))) == 2
     assert all(h.released for h in handles)
+
+
+def test_camera_names_cannot_collide_on_case_insensitive_filesystem():
+    with pytest.raises(ValueError):
+        SessionConfig("synthetic", "sabit", (
+            CameraConfig("Left", 0, "auto"), CameraConfig("left", 1, "auto")))
+
+
+@pytest.mark.parametrize("image", [np.zeros((8, 8), np.uint8), np.zeros((8, 8, 4), np.uint8),
+                                    np.zeros((8, 8, 3), np.float32)])
+def test_unsupported_image_is_not_published(tmp_path, image):
+    class InvalidImage(FakeCapture):
+        def retrieve(self):
+            return True, image
+    handles = [FakeCapture(), InvalidImage()]
+    with pytest.raises(ValueError, match="BGR"):
+        run(tmp_path, handles)
+    assert not list((tmp_path / "session/batches").iterdir())
+    assert all(h.released for h in handles)
