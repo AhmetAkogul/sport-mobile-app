@@ -1,0 +1,60 @@
+# Çoklu Kamera 3B Hareket Analizi
+
+> Telefon uygulamaları egzersiz formunu, ölçemeyecekleri bir hassasiyetle değerlendiriyor.
+> Biz kalibre edilmiş çoklu kamera düzeneğiyle bu hatayı ölçüyor, sınırını belirliyor ve
+> telefon kestirimini düzeltmeyi öğretiyoruz.
+
+**Bitirme projesi · 2026–2027**
+
+## Hızlı başlangıç
+
+```bash
+make kurulum     # bağımlılıkları kur
+make kontrol     # ortam doğru mu?
+make test        # testler
+```
+
+`make kontrol` "Her şey yerinde" demeden çalışmaya başlamayın.
+
+## Katmanlar
+
+| Katman | Rol | Hedef hata |
+|---|---|---|
+| Profesyonel (çoklu kamera) | Yer gerçeği üretir | ~20 mm |
+| Tüketici (tek telefon) | Ölçülen nesne | ~150–250 mm (literatür) |
+| Düzeltme katmanı | Katkımız | Ölçülecek |
+
+## Dizin yapısı
+
+| Dizin | İçerik |
+|---|---|
+| `calib/` | Kalibrasyon: ChArUco tespiti, `calibrateMultiview` sarmalayıcı |
+| `uncertainty/` | Monte Carlo, kovaryans, kalibrasyon kararlılığı |
+| `capture/` | Senkron kayıt, oturum yönetimi |
+| `pose3d/` | Çoklu görüşten poz + triangulation |
+| `mono/` | Telefon (tek kamera) hattı |
+| `correction/` | Düzeltme modeli |
+| `eval/` | **Tüm metrikler** — tek giriş noktası |
+| `scripts/` | Yardımcı betikler |
+| `docs/kararlar/` | Teknik karar kayıtları (neden böyle yaptık) |
+| `docs/toplanti/` | Haftalık toplantı tutanakları |
+| `data/` | Ham veri — **git'e girmez** |
+
+## Önce okuyun
+
+| Belge | Ne için |
+|---|---|
+| [PROJE-PLANI.md](PROJE-PLANI.md) | Takvim, kapılar, görev dağılımı, riskler |
+| [KATKI.md](KATKI.md) | Nasıl çalışıyoruz: dal, commit, inceleme, geri alma |
+| [KOD-PLANI.md](KOD-PLANI.md) | Ne yazacağız, hangi sırayla, hangi kabul testiyle |
+| [docs/kararlar/](docs/kararlar/) | Neden bu teknolojiyi seçtik |
+
+## Durum
+
+**Faz 0 — Karar ve kurulum.** Ayrıntı için `PROJE-PLANI.md`.
+
+Depo iskeleti kurulu, ortam doğrulandı (Python 3.13 + OpenCV 5.0.0, `make kontrol` yeşil).
+İlk ölçüm modülü eklendi: `eval.metrics.reprojection_error`; 15 test geçti.
+`make reproduce` bilinen yapay nokta hatalarının JSON özetini üretir; gerçek
+kalibrasyon raporu değildir. [Geliştirme kaydı](docs/deney/2026-09-22-metric-baseline.md).
+Sıradaki iş: ChArUco üretimi ve tespiti, ardından sentetik kalibrasyon doğrulaması.
