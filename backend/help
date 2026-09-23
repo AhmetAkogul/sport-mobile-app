@@ -1,0 +1,80 @@
+[INFO] Scanning for projects...
+[INFO]
+[INFO] ------------------------< com.sporapp:backend >-------------------------
+[INFO] Building  0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO]
+[INFO] >>> spring-boot:4.1.1:run (default-cli) > test-compile @ backend >>>
+[INFO]
+[INFO] --- resources:3.5.0:resources (default-resources) @ backend ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO]
+[INFO] --- compiler:3.15.0:compile (default-compile) @ backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO]
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ backend ---
+[INFO] skip non existing resourceDirectory C:\Users\user\Desktop\java\js\spor-app\backend\src\test\resources
+[INFO]
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ backend ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO]
+[INFO] <<< spring-boot:4.1.1:run (default-cli) < test-compile @ backend <<<
+[INFO]
+[INFO]
+[INFO] --- spring-boot:4.1.1:run (default-cli) @ backend ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.1)
+
+2026-09-23T15:29:27.526+03:00  INFO 9872 --- [backend] [           main] com.sporapp.backend.BackendApplication   : Starting BackendApplication using Java 21.0.12.1 with PID 9872 (C:\Users\user\Desktop\java\js\spor-app\backend\target\classes started by Ahmet in C:\Users\user\Desktop\java\js\spor-app\backend)
+2026-09-23T15:29:27.529+03:00  INFO 9872 --- [backend] [           main] com.sporapp.backend.BackendApplication   : No active profile set, falling back to 1 default profile: "default"
+2026-09-23T15:29:27.849+03:00  INFO 9872 --- [backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-09-23T15:29:27.860+03:00  INFO 9872 --- [backend] [           main] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 6 ms. Found 0 JPA repository interfaces.
+2026-09-23T15:29:28.110+03:00  INFO 9872 --- [backend] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8080 (http)
+2026-09-23T15:29:28.120+03:00  INFO 9872 --- [backend] [           main] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-09-23T15:29:28.120+03:00  INFO 9872 --- [backend] [           main] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.24]
+2026-09-23T15:29:28.154+03:00  INFO 9872 --- [backend] [           main] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 594 ms
+2026-09-23T15:29:28.311+03:00  INFO 9872 --- [backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-09-23T15:29:28.392+03:00  INFO 9872 --- [backend] [           main] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@601eb4af
+2026-09-23T15:29:28.393+03:00  INFO 9872 --- [backend] [           main] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-09-23T15:29:28.406+03:00  INFO 9872 --- [backend] [           main] org.flywaydb.core.FlywayExecutor         : Database: jdbc:postgresql://localhost:5432/sporapp (PostgreSQL 18.6)
+2026-09-23T15:29:28.448+03:00  INFO 9872 --- [backend] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Schema history table "public"."flyway_schema_history" does not exist yet
+2026-09-23T15:29:28.450+03:00  INFO 9872 --- [backend] [           main] o.f.core.internal.command.DbValidate     : Successfully validated 1 migration (execution time 00:00.020s)
+2026-09-23T15:29:28.472+03:00  INFO 9872 --- [backend] [           main] o.f.c.i.s.JdbcTableSchemaHistory         : Creating Schema History table "public"."flyway_schema_history" ...
+2026-09-23T15:29:28.537+03:00  INFO 9872 --- [backend] [           main] o.f.core.internal.command.DbMigrate      : Current version of schema "public": << Empty Schema >>
+2026-09-23T15:29:28.541+03:00  INFO 9872 --- [backend] [           main] o.f.core.internal.command.DbMigrate      : Migrating schema "public" to version "1 - init"
+2026-09-23T15:29:28.543+03:00  INFO 9872 --- [backend] [           main] o.f.c.i.s.DefaultSqlScriptExecutor       : +----------+
+| ?column? |
++----------+
+| 1        |
++----------+
+
+2026-09-23T15:29:28.551+03:00  INFO 9872 --- [backend] [           main] o.f.core.internal.command.DbMigrate      : Successfully applied 1 migration to schema "public", now at version v1 (execution time 00:00.003s)
+2026-09-23T15:29:28.602+03:00  INFO 9872 --- [backend] [           main] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-09-23T15:29:28.636+03:00  INFO 9872 --- [backend] [           main] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.5.Final
+2026-09-23T15:29:28.897+03:00  INFO 9872 --- [backend] [           main] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-09-23T15:29:28.952+03:00  INFO 9872 --- [backend] [           main] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+        Database JDBC URL [jdbc:postgresql://localhost:5432/sporapp]
+        Database driver: PostgreSQL JDBC Driver
+        Database dialect: PostgreSQLDialect
+        Database version: 18.6
+        Default catalog/schema: sporapp/public
+        Autocommit mode: undefined/unknown
+        Isolation level: READ_COMMITTED [default READ_COMMITTED]
+        JDBC fetch size: none
+        Pool: DataSourceConnectionProvider
+        Minimum pool size: undefined/unknown
+        Maximum pool size: undefined/unknown
+2026-09-23T15:29:29.187+03:00  INFO 9872 --- [backend] [           main] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-09-23T15:29:29.215+03:00  INFO 9872 --- [backend] [           main] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-09-23T15:29:29.406+03:00  INFO 9872 --- [backend] [           main] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8080 (http) with context path '/'
+2026-09-23T15:29:29.409+03:00  INFO 9872 --- [backend] [           main] com.sporapp.backend.BackendApplication   : Started BackendApplication in 2.153 seconds (process running for 2.4)
