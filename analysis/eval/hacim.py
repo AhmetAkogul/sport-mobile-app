@@ -68,6 +68,9 @@ class HacimHaritasi:
         }
 
 
+_TOHUM_ADIMI = 1000     # hucre tohumu: seed + iz * _TOHUM_ADIMI + ix
+
+
 def _prob_hatasi(
     kalib: Kalibrasyon,
     kameralar: list[Kamera],
@@ -80,6 +83,12 @@ def _prob_hatasi(
 
     Uc yonde olculur ve ortalamasi alinir; tek yon yaniltici olur cunku derinlik
     eksenindeki hata yanal eksendekinden buyuktur.
+
+    Hucre ancak **uc yonun ucu de** olculebildiyse "olculdu" sayilir (dis
+    inceleme H.1). Onceden olculebilen yonlerin ortalamasi alinirdi; derinlik
+    yonu duserse kalan yanal yonler hatayi iyimser gosterirdi. `ucgenle`'nin
+    hatasi da yutulmaz: iki gorus sarti burada denetlendigi icin oradan gelen
+    hata gercek bir sozlesme sorunudur (I.2 ile ayni gerekce).
     """
     hatalar, gorunurlukler = [], []
     for _, yon in PROB_YONLERI:
@@ -89,17 +98,14 @@ def _prob_hatasi(
         gorunurlukler.append(len(ortak))
         if len(ortak) < 2:
             continue
-        try:
-            a = ucgenle(kalib, {i: gozlemler[0][i] for i in ortak})
-            b = ucgenle(kalib, {i: gozlemler[1][i] for i in ortak})
-        except ValueError:
-            continue
+        a = ucgenle(kalib, {i: gozlemler[0][i] for i in ortak})
+        b = ucgenle(kalib, {i: gozlemler[1][i] for i in ortak})
         if not (a.gecerli and b.gecerli):
             continue
         hatalar.append(abs(mesafe(a, b) - prob_m) * 1000.0)
 
     gorunurluk = int(min(gorunurlukler)) if gorunurlukler else 0
-    if not hatalar:
+    if len(hatalar) < len(PROB_YONLERI):
         return float("nan"), gorunurluk
     return float(np.mean(hatalar)), gorunurluk
 
@@ -126,8 +132,17 @@ def hacim_haritasi(
     """
     if adim_m <= 0:
         raise ValueError("adim pozitif olmali")
+    for ad, (a, b) in (("x_araligi", x_araligi), ("z_araligi", z_araligi)):
+        if not (np.isfinite(a) and np.isfinite(b)) or a > b:
+            # Azalan aralik np.arange'de sessizce bos izgara uretirdi (H.4).
+            raise ValueError(f"{ad} artan ve sonlu olmali, {(a, b)} geldi")
     x = np.arange(x_araligi[0], x_araligi[1] + 1e-9, adim_m)
     z = np.arange(z_araligi[0], z_araligi[1] + 1e-9, adim_m)
+    if len(x) >= _TOHUM_ADIMI:
+        # Hucre tohumu `seed + iz*1000 + ix`: 1000 ve ustu genislikte iki hucre
+        # ayni tohumu alir (dis inceleme H.3). Tohum formulunu degistirmek
+        # kilitli sayilari degistirirdi; sinir acikca denetlenir.
+        raise ValueError(f"izgara genisligi {len(x)} >= {_TOHUM_ADIMI}: hucre tohumlari cakisir")
     hata = np.full((len(z), len(x)), np.nan)
     gorunurluk = np.zeros((len(z), len(x)), dtype=int)
 
@@ -135,7 +150,7 @@ def hacim_haritasi(
         for ix, xx in enumerate(x):
             merkez = np.array([float(xx), yukseklik_m, float(zz)])
             h, g = _prob_hatasi(kalib, kameralar, merkez, prob_m, gurultu_px,
-                                seed + iz * 1000 + ix)
+                                seed + iz * _TOHUM_ADIMI + ix)
             hata[iz, ix] = h
             gorunurluk[iz, ix] = g
 

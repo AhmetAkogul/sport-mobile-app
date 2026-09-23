@@ -29,6 +29,9 @@ MEDIAPIPE_EKLEMLER = (
 
 MEDIAPIPE_ISKELET = IskeletTanimi(ad="mediapipe-33", eklemler=MEDIAPIPE_EKLEMLER)
 
+# Isim -> indeks bir kez kurulur; `.index()` her eklem icin 33 eleman tarardi.
+_MEDIAPIPE_INDEKS = {ad: i for i, ad in enumerate(MEDIAPIPE_EKLEMLER)}
+
 # Dogrudan karsiligi olan eklemler: bizim isim -> MediaPipe ismi.
 MEDIAPIPE_ESLEME = {
     "sag_omuz": "RIGHT_SHOULDER", "sag_dirsek": "RIGHT_ELBOW", "sag_bilek": "RIGHT_WRIST",
@@ -44,17 +47,39 @@ MEDIAPIPE_ESLEME = {
 TUREVLER = {"boyun": ("LEFT_SHOULDER", "RIGHT_SHOULDER")}
 
 
+def _guven_degeri(landmark, ad: str) -> float:
+    """Bir guven alanini sonlu float'a indir; NaN/None/eksik -> 0.0.
+
+    `getattr(l, ad, 1.0) or 0.0` tek basina yetmez: NaN truthy oldugu icin
+    NaN'i 0.0'a cevirmez ve NaN guven asagi akar.
+    """
+    deger = getattr(landmark, ad, 1.0)
+    if deger is None:
+        return 0.0
+    try:
+        sayi = float(deger)
+    except (TypeError, ValueError) as e:
+        raise ValueError(f"'{ad}' sayisal degil: {deger!r}") from e
+    return sayi if np.isfinite(sayi) else 0.0
+
+
 def _mp_dizileri(landmarks, alan_sayisi: int):
-    """MediaPipe landmark listesi -> (koordinat, gorunurluk, varlik) dizileri."""
+    """MediaPipe landmark listesi -> (koordinat, gorunurluk, varlik) dizileri.
+
+    `alan_sayisi` 2 (goruntu duzlemi: x, y) veya 3 (dunya: x, y, z) olabilir;
+    baska bir deger sessizce 2 gibi davranmaz, reddedilir.
+    """
+    if alan_sayisi not in (2, 3):
+        raise ValueError(f"alan_sayisi 2 veya 3 olmali, {alan_sayisi} geldi")
     if len(landmarks) != len(MEDIAPIPE_EKLEMLER):
         raise ValueError(
             f"MediaPipe {len(landmarks)} eklem dondurdu, {len(MEDIAPIPE_EKLEMLER)} "
             "bekleniyor -- surum degismis olabilir, esleme dogrulanmali")
-    koord = np.array([[getattr(l, "x"), getattr(l, "y")] + 
-                      ([getattr(l, "z")] if alan_sayisi == 3 else [])
-                      for l in landmarks], dtype=np.float64)
-    gorunurluk = np.array([getattr(l, "visibility", 1.0) or 0.0 for l in landmarks])
-    varlik = np.array([getattr(l, "presence", 1.0) or 0.0 for l in landmarks])
+    koord = np.array([[getattr(lm, "x"), getattr(lm, "y")]
+                      + ([getattr(lm, "z")] if alan_sayisi == 3 else [])
+                      for lm in landmarks], dtype=np.float64)
+    gorunurluk = np.array([_guven_degeri(lm, "visibility") for lm in landmarks])
+    varlik = np.array([_guven_degeri(lm, "presence") for lm in landmarks])
     return koord, gorunurluk, varlik
 
 
@@ -68,12 +93,12 @@ def _referansa_tasi(koord, guven, gorunur):
 
     for i, ad in enumerate(REFERANS_ISKELET.eklemler):
         if ad in MEDIAPIPE_ESLEME:
-            k = MEDIAPIPE_EKLEMLER.index(MEDIAPIPE_ESLEME[ad])
+            k = _MEDIAPIPE_INDEKS[MEDIAPIPE_ESLEME[ad]]
             yeni_koord[i] = koord[k]
             yeni_guven[i] = guven[k]
             yeni_gorunur[i] = gorunur[k]
         elif ad in TUREVLER:
-            indeksler = [MEDIAPIPE_EKLEMLER.index(x) for x in TUREVLER[ad]]
+            indeksler = [_MEDIAPIPE_INDEKS[x] for x in TUREVLER[ad]]
             yeni_koord[i] = koord[indeksler].mean(axis=0)
             yeni_guven[i] = float(guven[indeksler].min())
             yeni_gorunur[i] = bool(gorunur[indeksler].all())
@@ -87,13 +112,22 @@ def mediapipe_poz2b(
     guven_esigi: float = 0.5,
     kamera: int | None = None,
     kare: int | None = None,
-    model: str = "mediapipe-1.0.1/pose_landmarker",
+    tespit: bool = True,
+    model: str = "bilinmiyor",
 ) -> Poz2B:
     """MediaPipe `PoseLandmarkerResult.pose_landmarks[0]` -> `Poz2B`.
 
     MediaPipe **normalize** koordinat dondurur (0..1). Kalibrasyon piksel
     uzayinda calistigi icin burada goruntu boyutuyla carpilir; atlanirsa
     triangulation sessizce sacma sonuc verir.
+
+    Model adi **varsayilan olarak verilmez**: cagiran kod gercek model
+    kimligini (surum + varyant) gecmelidir, yoksa rapora yanlis bir surum
+    yazilir. `mono/mediapipe_model.py` bunu kendi `model_id`'siyle gecirir.
+
+    Eksik eklem **NaN** kalir (`gorunur=False`); 0.0'a cevrilmez -- 0.0 gecerli
+    bir piksel koordinatidir ve maske denetimini unutan kod sessizce yanlis
+    sonuc uretir.
     """
     g, y = goruntu_boyutu
     if min(g, y) <= 0:
@@ -101,30 +135,41 @@ def mediapipe_poz2b(
     koord, gorunurluk, varlik = _mp_dizileri(landmarks, 2)
     piksel = koord * np.array([g, y])
     guven = np.minimum(gorunurluk, varlik)
-    gorunur = guven >= guven_esigi
+    # Model NaN koordinat dondurduyse "gorunur" demek celiskidir: maske ile
+    # nokta tutarli olmali (NaN'lar 0.0'a cevrilmiyor, maske duzeltiliyor).
+    gorunur = (guven >= guven_esigi) & np.isfinite(piksel).all(axis=1)
 
     yeni_koord, yeni_guven, yeni_gorunur = _referansa_tasi(piksel, guven, gorunur)
     return Poz2B(
         iskelet=REFERANS_ISKELET,
-        noktalar=np.nan_to_num(yeni_koord, nan=0.0),
-        guven=yeni_guven, gorunur=yeni_gorunur,
-        goruntu_boyutu=goruntu_boyutu, model=model, kamera=kamera, kare=kare,
-        uzay="ozgun",
+        noktalar=yeni_koord, guven=yeni_guven, gorunur=yeni_gorunur,
+        tespit=bool(tespit), goruntu_boyutu=goruntu_boyutu, model=model,
+        kamera=kamera, kare=kare, uzay="ozgun",
         ek={"kaynak_iskelet": MEDIAPIPE_ISKELET.ad, "guven_esigi": guven_esigi,
             "turetilmis": tuple(TUREVLER)},
     )
 
 
 def mediapipe_dunya_noktalari(world_landmarks, guven_esigi: float = 0.5):
-    """MediaPipe `world_landmarks` -> (noktalar, gorunur) referans iskelet sirasinda.
+    """MediaPipe `world_landmarks` -> (noktalar, guven, gorunur) referans sirada.
 
     **Bunlar telefonun kendi 3B kestirimidir** ve tezin olctugu sey tam olarak
-    budur (`docs/kararlar/0006`). Metre biriminde ve kalca merkezlidir: mutlak
-    konum degil, govdeye gore sekildir. Duzenek ciktisiyla karsilastirirken
-    dogrudan konum farki alinamaz; rijit hizalama gerekir
-    (`pose3d.hizalama.rijit_hizala`).
+    budur (`docs/kararlar/0006`). Duzenek ciktisiyla karsilastirirken dogrudan
+    konum farki alinamaz; rijit hizalama gerekir (`pose3d.hizalama.rijit_hizala`).
+
+    Koordinat sistemi (MediaPipe belgesine gore, mediapipe 1.0.1):
+
+    - Birim: **metre**.
+    - Merkez: **kalca merkezi** (iki kalcanin orta noktasi) -- mutlak konum yok.
+    - Eksenler: **X sag, Y asagi, Z kameradan uzaga** (goruntu eksenleriyle
+      ayni yon; sag-el kurali degil). Y'nin asagi olmasi, duzenegin Y-yukari
+      cercevesiyle karsilastirilirken isaret hatasi uretir; bu yuzden hizalama
+      (`rijit_hizala`) dondurme matrisini ogrenir, isaretler elle cevrilmez.
+
+    Guven de dondurulur (A.5): duzeltme katmani ham guveni isteyecek.
     """
     koord, gorunurluk, varlik = _mp_dizileri(world_landmarks, 3)
     guven = np.minimum(gorunurluk, varlik)
-    yeni_koord, _, yeni_gorunur = _referansa_tasi(koord, guven, guven >= guven_esigi)
-    return yeni_koord, yeni_gorunur
+    gorunur = (guven >= guven_esigi) & np.isfinite(koord).all(axis=1)
+    yeni_koord, yeni_guven, yeni_gorunur = _referansa_tasi(koord, guven, gorunur)
+    return yeni_koord, yeni_guven, yeni_gorunur

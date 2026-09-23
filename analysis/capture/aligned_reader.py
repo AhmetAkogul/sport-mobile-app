@@ -126,6 +126,11 @@ def open_aligned_batches(plan_path, *, source_timeout_s=5.0, open_timeout_s=15.0
                     now, before = path.stat(), signatures[key]
                     if (now.st_size, now.st_mtime_ns, now.st_ino) != (before.st_size, before.st_mtime_ns, before.st_ino):
                         raise ValueError(f"Video okuma sırasında değişti: {key}")
+                    # `image` her satirda sifirlanir: dongu calismazsa onceki
+                    # kameranin karesi bu kameraya yazilmasin (dis inceleme C.9.1).
+                    # `_validate` kare indekslerinin artmasini zaten sart kosuyor;
+                    # bu, o dolayli guvenceyi yerel ve acik hale getirir.
+                    image = None
                     while positions[key] < row["source_frame_index"]:
                         if not handle.grab():
                             raise ValueError(f"Video planlanan kareden önce bitti: {key}")
@@ -133,6 +138,9 @@ def open_aligned_batches(plan_path, *, source_timeout_s=5.0, open_timeout_s=15.0
                         if not ok or image is None:
                             raise ValueError(f"Video karesi çözülemedi: {key}")
                         positions[key] += 1
+                    if image is None:
+                        raise ValueError(
+                            f"Plan ayni kareyi ikinci kez istiyor veya geri gidiyor: {key}")
                     if (not isinstance(image, np.ndarray) or image.dtype != np.uint8
                             or image.ndim != 3 or image.shape[2] != 3 or image.size == 0):
                         raise ValueError("Görüntü BGR uint8 olmalı.")

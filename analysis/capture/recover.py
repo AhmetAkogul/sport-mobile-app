@@ -54,10 +54,18 @@ def recover_session(source_dir, output_dir):
             shutil.copytree(group, staging / "batches" / group.name, symlinks=True)
         _write_json(staging / "session.json", metadata)
         with (staging / "frames.jsonl").open("x", encoding="utf-8") as index:
-            for frames in iter_batches(staging):
-                group = staging / "batches" / f"{frames[0].batch_id:06d}"
-                batch = json.loads((group / "frames.json").read_text(encoding="utf-8"))
-                index.write(json.dumps(batch, ensure_ascii=False) + "\n")
+            # Kopyada baglanti (symlink) kaldiysa okuyucu reddeder; hata kurtarma
+            # baglamiyla yeniden paketlenir (dis inceleme C.5.1). Kareler tembel
+            # okunur: buyuk bir oturum bellege alinmaz.
+            try:
+                for frames in iter_batches(staging):
+                    group = staging / "batches" / f"{frames[0].batch_id:06d}"
+                    batch = json.loads((group / "frames.json").read_text(encoding="utf-8"))
+                    index.write(json.dumps(batch, ensure_ascii=False) + "\n")
+            except ValueError as exc:
+                raise ValueError(
+                    "Kurtarma: kaynak gruplardan biri okunamadi (baglanti/bozuk "
+                    f"dosya desteklenmez): {exc}") from exc
         (staging / "recovery-original-session.json").write_bytes(original_bytes)
         if session_path.read_bytes() != original_bytes or sorted(p.name for p in batches.iterdir()) != names:
             raise RuntimeError("Kaynak kayıt değişti; önce kayıt işlemini durdurun.")

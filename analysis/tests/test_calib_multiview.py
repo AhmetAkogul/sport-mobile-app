@@ -91,3 +91,30 @@ def test_boyut_sayisi_uyusmazsa_hata():
     s = sahne_uret(SPEC, n_kare=6, seed=1)
     with pytest.raises(ValueError, match="goruntu boyutu"):
         kalibre_et(s.obj_noktalari, s.img_noktalari, [(1280, 720)], s.mask)
+
+
+def test_fisheye_dort_parametreli_bozulma_istiyor():
+    """OpenCV fisheye modeli 4 parametre bekler, pinhole 5 (B.4.1).
+
+    Bes eleman verildiginde OpenCV ya sessizce sonuncuyu yok sayar ya da hata
+    verir; her iki durumda da davranis belirsizdir.
+    """
+    from calib.multiview import bozulma_uzunlugu
+
+    assert bozulma_uzunlugu(balik_gozu=True) == 4
+    assert bozulma_uzunlugu(balik_gozu=False) == 5
+
+
+def test_kalibrasyon_liste_uzunluklari_dogrulaniyor():
+    """Kalibrasyon yapicisi tutarsiz listeleri kabul etmemeli (B.4.3)."""
+    import numpy as np
+    import pytest
+    from calib.multiview import Kalibrasyon
+
+    with pytest.raises(ValueError):
+        Kalibrasyon(rms_px=0.3, Ks=[np.eye(3), np.eye(3)],
+                    bozulmalar=[np.zeros(5)], Rs=[np.eye(3)], Ts=[np.zeros((3, 1))])
+
+    with pytest.raises(ValueError, match="Ks"):
+        Kalibrasyon(rms_px=0.3, Ks=[np.zeros((2, 2))], bozulmalar=[np.zeros(5)],
+                    Rs=[np.eye(3)], Ts=[np.zeros((3, 1))])

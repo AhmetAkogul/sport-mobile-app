@@ -21,6 +21,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from typing import Callable, Iterable
+import math
+import warnings
 
 import numpy as np
 
@@ -32,6 +34,26 @@ Kestirici = Callable[[np.ndarray], Poz2B]
 
 # Kemik uzunlugu onculeri: {eklem cifti: metre}. Cift sirasi onemli degil.
 UzunlukOnculeri = dict[tuple[str, str], float]
+
+
+def json_uyumlu(deger):
+    """NumPy dizilerini JSON'a cevrilecek hale getir; NaN/Inf -> None.
+
+    Politikayi tek yerde tutar: eksik eklem NaN'dir, JSON'da `null` olur. 0.0
+    gecerli bir piksel koordinatidir ve "yok" bilgisini saklamaz. `allow_nan=False`
+    ile yazan her cikti bu fonksiyondan gecmelidir (dis inceleme U.3/U.6/X.4).
+    """
+    if isinstance(deger, np.ndarray):
+        return [json_uyumlu(v) for v in deger.tolist()]
+    if isinstance(deger, np.generic):
+        return json_uyumlu(deger.item())
+    if isinstance(deger, dict):
+        return {json_uyumlu(k): json_uyumlu(v) for k, v in deger.items()}
+    if isinstance(deger, (list, tuple)):
+        return [json_uyumlu(v) for v in deger]
+    if isinstance(deger, float) and not math.isfinite(deger):
+        return None
+    return deger
 
 
 @dataclass(frozen=True)
@@ -92,17 +114,33 @@ def tek_gorus_3b(
       Bu, kemiğin **kamera duzlemine paralel** oldugu varsayimidir; egik kemik
       icin derinligi sistematik olarak sasar. Sasma buyuklugu tezin olcecegi
       seyin ta kendisi.
-    - Eklem derinligi, kendine bagli kemiklerin derinliklerinin ortalamasi.
-      Hicbir kemiige bagli olmayan eklem uydurulmaz, gorunmez isaretlenir.
-    - Onculu olmayan kemik atlanir; yalnizca onculsuz kemiclere bagli eklem
-      gorunmez kalir. Eksik veri sessizce doldurulmaz.
+    - Eklem derinligi, kendine bagli kemiklerin derinliklerinin ortalamasi;
+      kemiklerin onerdigi derinlikler birbirini tutmuyorsa bu **saklanir**
+      (`ek["derinlik_sacilimi_m"]`), cunku buyuk acilarda uyusmazlik buyur ve
+      "bu eklemin derinligi guvenilir mi" sorusunun cevabi budur.
+    - Hicbir kemige bagli olmayan eklem uydurulmaz, gorunmez isaretlenir.
+    - Onculu olmayan kemik atlanir ve atlananlar **kaydedilir**
+      (`ek["atlanan_kemikler"]`): hata analizinde "kac eklem eksik oncu yuzunden
+      dustu" sorusu bu alandan cevaplanir. Eksik veri sessizce doldurulmaz.
 
     Cikti telefon kamerasinin koordinat sistemindedir (metre).
     """
+    K = np.asarray(K, dtype=np.float64)
+    if K.shape != (3, 3):
+        raise ValueError(f"K (3, 3) olmali, {K.shape} geldi")
+    if not np.isfinite(K).all():
+        raise ValueError("K sonlu olmali")
     fx, fy = float(K[0, 0]), float(K[1, 1])
     cx, cy = float(K[0, 2]), float(K[1, 2])
     if fx <= 0 or fy <= 0:
         raise ValueError("odak uzakliklari pozitif olmali")
+    if abs(fx - fy) / max(fx, fy) > 0.02:
+        # Kare piksel varsayimi bozulmus: f ortalama alinir, ama bu sistematik
+        # bir hata kaynagidir ve sessizce gecmemeli.
+        warnings.warn(
+            f"fx={fx:.2f} ve fy={fy:.2f} farkli (>{0.02:.0%}); tek gorus 3B kare "
+            "piksel varsayar, sonuc sistematik olarak sapabilir",
+            stacklevel=2)
     f_ort = 0.5 * (fx + fy)
 
     # Model iskeletini referans tanima isimle tasi; indeks esitligi varsayilmaz.
@@ -114,11 +152,24 @@ def tek_gorus_3b(
             noktalar2[j] = poz.noktalar[k]
             gorunur[j] = True
 
+    if not isinstance(uzunluklar_m, dict):
+        raise ValueError("oncu uzunluklari sozluk olmali: {(eklem, eklem): metre}")
     normallestirilmis = {}
     for (a, b), uzunluk in uzunluklar_m.items():
-        if uzunluk <= 0:
-            raise ValueError(f"oncu uzunluk pozitif olmali: {a}-{b}={uzunluk}")
+        if not np.isfinite(uzunluk) or uzunluk <= 0:
+            raise ValueError(f"oncu uzunluk sonlu ve pozitif olmali: {a}-{b}={uzunluk}")
         normallestirilmis[frozenset((a, b))] = float(uzunluk)
+
+    # Iskelette karsiligi olmayan oncu (orn. sag_bilek-sol_ayak_bilegi) hicbir
+    # kemige uymaz ve sessizce "hic eklem uretilmedi" sonucuna doner: reddedilir.
+    kemikler = {frozenset(c) for c in tanim.baglantilar}
+    tanimsiz = sorted(tuple(sorted(k)) for k in normallestirilmis if k not in kemikler)
+    if tanimsiz:
+        raise ValueError(f"iskelette tanimli olmayan kemik icin oncu: {tanimsiz}")
+
+    # Onculu olmayan kemikler atlanir; hangileri oldugu kaydedilir (dis inceleme P.2).
+    atlanan = [(a, b) for a, b in tanim.baglantilar
+               if frozenset((a, b)) not in normallestirilmis]
 
     derinlik_toplam: dict[int, list[float]] = {}
     for a, b in tanim.baglantilar:
@@ -129,10 +180,10 @@ def tek_gorus_3b(
         ia, ib = tanim.indeks(a), tanim.indeks(b)
         if not (gorunur[ia] and gorunur[ib]):
             continue
-        l = float(np.linalg.norm(noktalar2[ia] - noktalar2[ib]))
-        if l < 1e-9:
+        l_px = float(np.linalg.norm(noktalar2[ia] - noktalar2[ib]))
+        if l_px < 1e-9:
             continue                      # sifir uzunluklu izdusum derinlik vermez
-        s = f_ort * L / l
+        s = f_ort * L / l_px
         derinlik_toplam.setdefault(ia, []).append(s)
         derinlik_toplam.setdefault(ib, []).append(s)
 
@@ -140,16 +191,21 @@ def tek_gorus_3b(
     noktalar3 = np.full((n, 3), np.nan)
     goren = np.zeros(n, dtype=int)
     artik = np.full(n, np.nan)            # tek goruste yeniden izdusum artigi tanimsiz
+    sacilim = {}
     for j in range(n):
-        if not derinlik_toplam.get(j):
+        liste = derinlik_toplam.get(j)
+        if not liste:
             continue
-        s = float(np.mean(derinlik_toplam[j]))
+        s = float(np.mean(liste))
         u, v = noktalar2[j]
         noktalar3[j] = ((u - cx) * s / fx, (v - cy) * s / fy, s)
         goren[j] = 1                      # tek gorus: goren kamera sayisi en fazla 1
+        # Kemiklerin onerdigi derinlikler uyusmuyorsa sakla: derinlik guvenilirligi.
+        sacilim[tanim.eklemler[j]] = float(np.std(liste))
     gorunur = goren.astype(bool)
     return Iskelet3B(tanim=tanim, noktalar=noktalar3, gorunur=gorunur,
-                     goren_kamera=goren, artik_px=artik)
+                     goren_kamera=goren, artik_px=artik,
+                     ek={"atlanan_kemikler": atlanan, "derinlik_sacilimi_m": sacilim})
 
 
 # ---------------------------------------------------------------------------
@@ -162,7 +218,7 @@ def hatti_kostur(
     K: np.ndarray,
     uzunluklar_m: UzunlukOnculeri,
     tanim: IskeletTanimi = REFERANS_ISKELET,
-    guven_esigi: float = 0.5,
+    guven_esigi: float | None = None,
 ) -> TelefonSonucu:
     """Kayittan 3B iskelete kadar telefon hatti.
 
@@ -172,7 +228,11 @@ def hatti_kostur(
     - Adaptor `uzay="ozgun"` dondurmek zorunda (HAZIR-TEKNOLOJILER madde 3).
       Letterbox'li adaptor donusumu kendisi geri almali; hat model uzayindaki
       pozu kabul etmez.
-    - Her poz guven esigiyle maskelenir; nokta silinmez, maskelenir.
+    - Esik **adaptorun isidir** ve modele ozgudur (MediaPipe 0.5, SIMCC 0.3;
+      `mono/backend.py`). Hat varsayilan olarak yeniden esiklemez: sabit bir
+      0.5 burada RTMPose'un 0.3 maskesini sessizce ezer (0.4 skorlu 13 eklem
+      sifira duser). `guven_esigi` verilirse ek bir **daraltma** olarak
+      uygulanir; nokta silinmez, maskelenir.
     """
     pozlar: list[Poz2B] = []
     iskeletler: list[Iskelet3B] = []
@@ -186,7 +246,8 @@ def hatti_kostur(
                 "sozlesme geregi ozgun goruntu koordinatina geri cevrilmeli")
         if kayit.zaman_ms is not None:
             poz = replace(poz, ek={**poz.ek, "zaman_ms": float(kayit.zaman_ms)})
-        poz = poz.guven_esikle(guven_esigi)
+        if guven_esigi is not None:
+            poz = poz.guven_esikle(guven_esigi)
         pozlar.append(poz)
         iskeletler.append(tek_gorus_3b(poz, K, uzunluklar_m, tanim=tanim))
     return TelefonSonucu(pozlar=pozlar, iskeletler=iskeletler, tanim=tanim)

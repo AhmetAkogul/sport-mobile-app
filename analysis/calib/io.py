@@ -46,7 +46,20 @@ class Meta:
     n_kare: int = 0                      # kaynaktaki kare sayisi (yazan tasiyir)
     gorunurluk: float | None = None      # kamera x kare gozlem orani (0-1)
     rms_px: float | None = None          # kopya; tek bakisda karsilastirma icin
+    # Kamera basina "pinhole" / "fisheye". Bos ise pinhole varsayilir (eski
+    # kayitlar). Bu alan olmadan 4 elemanli fisheye bozulmasi 5 elemanli
+    # pinhole'a tamamlanip modelin ne oldugu kayboluyordu -- dis inceleme B.3.2.
+    modeller: list[str] = field(default_factory=list)
     etiketler: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Dis inceleme B.3.5: suruklenme egrisi tarihe gore siralanir; ayrisamayan
+        # bir tarih haftalari sessizce karistirir. Dilimsiz tarih UTC kabul
+        # edilir (uncertainty/haftalik.py; karisik dilim testi).
+        try:
+            datetime.fromisoformat(str(self.tarih_iso))
+        except ValueError as exc:
+            raise ValueError(f"tarih_iso ISO 8601 olmali: {self.tarih_iso!r}") from exc
 
 
 @dataclass
@@ -93,6 +106,7 @@ class Kabin:
             n_kare=int(m.get("n_kare", 0)),
             gorunurluk=(float(m["gorunurluk"]) if m.get("gorunurluk") is not None else None),
             rms_px=(float(m["rms_px"]) if m.get("rms_px") is not None else None),
+            modeller=[str(x) for x in (m.get("modeller") or [])],
             etiketler={str(k): str(v) for k, v in (m.get("etiketler") or {}).items()},
         )
         kabin = cls(
@@ -120,6 +134,29 @@ class Kabin:
         for i, T in enumerate(self.Ts):
             if T.shape != (3, 1):
                 raise ValueError(f"Ts[{i}] (3,1) olmali, {T.shape} geldi")
+        # Ks ve bozulmalar da denetlenmeli: bozuk bir kaydi sessizce kabul etmek,
+        # yanlis kalibrasyonla ucgenleme yapmak demek (B.3.1).
+        for i, K in enumerate(self.Ks):
+            if np.asarray(K).shape != (3, 3):
+                raise ValueError(f"Ks[{i}] (3,3) olmali, {np.asarray(K).shape} geldi")
+        for i, d in enumerate(self.bozulmalar):
+            a = np.asarray(d)
+            if a.ndim != 1 or a.size not in (4, 5, 8, 12, 14):
+                raise ValueError(
+                    f"bozulmalar[{i}] tek boyutlu ve 4/5/8/12/14 elemanli olmali, "
+                    f"{a.shape} geldi")
+        if self.meta.modeller and len(self.meta.modeller) != n:
+            raise ValueError(
+                f"meta.modeller {len(self.meta.modeller)} eleman, {n} kamera var")
+
+    def __post_init__(self) -> None:
+        """Yazma aninda dogrula.
+
+        Onceden yalnizca `from_sozluk` dogruluyordu; `kalibrasyondan` dogrudan
+        Kabin kurdugu icin tutarsizlik ancak **okuma** aninda patliyordu ve
+        hatanin kaynagi gizleniyordu (B.3.4).
+        """
+        self._dogrula()
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +185,7 @@ def kalibrasyondan(
             n_kare=n_kare,
             gorunurluk=gorunurluk,
             rms_px=kalib.rms_px,
+            modeller=list(kalib.modeller),
             etiketler=dict(etiketler or {}),
         ),
         Ks=[np.asarray(K, dtype=np.float64) for K in kalib.Ks],
@@ -158,11 +196,24 @@ def kalibrasyondan(
 
 
 def kalibrasyona(kabin: Kabin) -> Kalibrasyon:
-    """Kaydi geri Kalibrasyon'a cevir. rms yoksa 0.0 konur (parametreler etkilenmez)."""
+    """Kaydi geri Kalibrasyon'a cevir. rms yoksa 0.0 konur (parametreler etkilenmez).
+
+    Model bilgisi varsa fisheye bozulmasi 4 elemana geri kirpilir: `_vektor_oku`
+    okurken pinhole sozlesmesine tamamliyor, model kaydi olmadan bu tamamlama
+    geri alinamazdi (B.3.2).
+    """
+    modeller = tuple(kabin.meta.modeller)
+    bozulmalar = []
+    for i, d in enumerate(kabin.bozulmalar):
+        a = np.asarray(d, dtype=np.float64)
+        if i < len(modeller) and modeller[i] == "fisheye" and a.size == 5:
+            a = a[:4]
+        bozulmalar.append(a)
     return Kalibrasyon(
         rms_px=float(kabin.meta.rms_px) if kabin.meta.rms_px is not None else 0.0,
+        modeller=modeller,
         Ks=[np.asarray(K, dtype=np.float64) for K in kabin.Ks],
-        bozulmalar=[np.asarray(d, dtype=np.float64) for d in kabin.bozulmalar],
+        bozulmalar=bozulmalar,
         Rs=[np.asarray(R, dtype=np.float64) for R in kabin.Rs],
         Ts=[np.asarray(T, dtype=np.float64).reshape(3, 1) for T in kabin.Ts],
     )
@@ -177,7 +228,8 @@ def yaz(kabin: Kabin, yol: str | Path) -> Path:
     p = Path(yol)
     if str(p.parent) not in ("", "."):
         p.parent.mkdir(parents=True, exist_ok=True)
-    metin = json.dumps(kabin.to_sozluk(), ensure_ascii=False, indent=2, sort_keys=True)
+    metin = json.dumps(kabin.to_sozluk(), ensure_ascii=False, indent=2, sort_keys=True,
+                       allow_nan=False)
     tmp = p.with_name(p.name + ".tmp")
     tmp.write_text(metin + "\n", encoding="utf-8")
     tmp.replace(p)
@@ -203,6 +255,10 @@ def _matris_yaz(M: np.ndarray) -> list[list[str]]:
         a = a.reshape(3, 1)
     else:
         raise ValueError(f"beklenmeyen boyut {a.shape}; 9 veya 3 eleman gerekli")
+    # Sayilar metin olarak yazildigi icin allow_nan onlari yakalamaz: "nan"
+    # sessizce dolasir ve okuyan float("nan") yapar (dis inceleme B.3.3).
+    if not np.isfinite(a).all():
+        raise ValueError("kalibrasyon matrisi sonlu olmayan deger iceriyor")
     return [[repr(float(x)) for x in satir] for satir in a]
 
 
@@ -218,6 +274,8 @@ def _vektor_yaz(v: np.ndarray) -> list[str]:
     a = np.asarray(v, dtype=np.float64).ravel()
     if a.size not in (4, 5):
         raise ValueError(f"bozulma vektoru 4 veya 5 elemanli olmali, {a.size} geldi")
+    if not np.isfinite(a).all():
+        raise ValueError("bozulma vektoru sonlu olmayan deger iceriyor")
     return [repr(float(x)) for x in a]
 
 

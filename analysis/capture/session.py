@@ -54,7 +54,13 @@ class SessionConfig:
         if not self.cameras or not all(isinstance(c, CameraConfig) for c in self.cameras):
             raise ValueError("En az bir CameraConfig gerekli.")
         ids = [c.camera_id.casefold() for c in self.cameras]
-        sources = [c.source for c in self.cameras]
+        # Kaynaklar da buyuk/kucuk harf duyarsiz karsilastirilir: macOS dosya
+        # sisteminde `Video.mp4` ile `video.mp4` ayni dosyadir ve iki "farkli"
+        # kamera ayni videoyu okurdu (dis inceleme C.1.2). Linux'ta bu fazladan
+        # katidir ama zararsizdir: iki kamerayi yalnizca harf farkiyla ayirmak
+        # zaten hataya aciktir.
+        sources = [c.source.casefold() if isinstance(c.source, str) else c.source
+                   for c in self.cameras]
         if len(set(ids)) != len(ids) or len(set(sources)) != len(sources):
             raise ValueError("Kamera kimlikleri ve kaynakları benzersiz olmalı.")
         if not isinstance(self.notes, str):
@@ -65,6 +71,29 @@ class SessionConfig:
 
     @classmethod
     def from_json(cls, path):
-        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        """Kayıtlı oturum yapılandırmasını okur.
+
+        Yapısal bozukluk (dict değil, cameras eksik, bilinmeyen alan, cameras
+        öğesi dict değil) **açık mesajla** reddedilir; aksi halde hata çağrı
+        yerinden değil dict erişiminden gelir (dış inceleme C.1.1).
+        """
+        metin = Path(path).read_text(encoding="utf-8")
+        try:
+            data = json.loads(metin)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"Oturum JSON'u çözülemedi: {exc}") from exc
+        if not isinstance(data, dict):
+            raise ValueError("Oturum JSON'u nesne olmalı.")
+        zorunlu = {"participant_code", "lighting", "cameras"}
+        fazla = set(data) - zorunlu - {"notes"}   # notes varsayilanli, istege bagli
+        eksik = zorunlu - set(data)
+        if fazla:
+            raise ValueError(f"Oturum JSON'unda bilinmeyen alan: {sorted(fazla)}")
+        if eksik:
+            raise ValueError(f"Oturum JSON'unda eksik alan: {sorted(eksik)}")
+        if not isinstance(data["cameras"], list):
+            raise ValueError("cameras liste olmalı.")
+        if not all(isinstance(item, dict) for item in data["cameras"]):
+            raise ValueError("her cameras öğesi nesne olmalı.")
         data["cameras"] = tuple(CameraConfig(**item) for item in data["cameras"])
         return cls(**data)

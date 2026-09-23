@@ -85,6 +85,9 @@ def scan_video(camera_id, path, *, max_frames=100000, source_timeout_s=5.0,
         handle.release()
     if len(timestamps) < 2:
         raise ValueError("Zaman desteğini doğrulamak için en az iki kare gerekli.")
+    # Ikinci tam okuma bilincli: tarama sirasinda degisen video, yanlis zaman
+    # cizelgesiyle sessizce hizalanmasin. Maliyet dosya boyutuyla dogrusal
+    # (dis inceleme C.8.2): 500 MB'lik video icin iki tam okuma.
     if file_sha256(video_path) != fingerprint:
         raise ValueError("Video tarama sırasında değişti.")
     return VideoTimeline(camera_id, str(video_path), tuple(timestamps), fingerprint)

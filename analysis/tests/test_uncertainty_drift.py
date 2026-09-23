@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pytest
 
-from calib.io import Kabin, Meta, kalibrasyondan, yaz
+from calib.io import Kabin, kalibrasyondan, yaz
 from calib.multiview import Kalibrasyon
 from uncertainty.drift import egri_olustur, _olcumler
 
@@ -17,9 +17,11 @@ from uncertainty.drift import egri_olustur, _olcumler
 def _kabin(tarih: str, fx=900.0, fy=900.0, taban=2.0, n_kamera=4,
            surum="", notlar="") -> Kabin:
     """Kucuk ama gecerli bir kalibrasyon kaydi uretir."""
-    kamera_i = lambda i: np.array([[fx + 0.01 * i, 0.0, 640.0],
-                                   [0.0, fy + 0.01 * i, 360.0],
-                                   [0.0, 0.0, 1.0]])
+    def kamera_i(i):
+        return np.array([[fx + 0.01 * i, 0.0, 640.0],
+                         [0.0, fy + 0.01 * i, 360.0],
+                         [0.0, 0.0, 1.0]])
+
     return kalibrasyondan(
         Kalibrasyon(
             rms_px=0.3,
@@ -76,11 +78,13 @@ def test_fx_serisi_kaymayi_tasiyor():
 
 
 def test_baz_noktasi_secilebilir():
-    e = egri_olustur(_haftalik(4))
-    sapma = e.seri("fx")
-    np.testing.assert_allclose(e.sapma_yuzdesi("fx", baz_indeks=2),
-                               (e.seri("fx") - e.seri("fx")[2]) / abs(e.seri("fx")[2]) * 100,
-                               rtol=1e-12)
+    """Surunme varken baz secimi sonucu degistirir: baz haftada sapma sifir,
+    oncesi negatif, sonrasi pozitif. (Surunmesiz seride bu test bos gecerdi.)"""
+    e = egri_olustur(_haftalik(4, fx_surunme=0.2))
+    seri = e.seri("fx")
+    sapma = e.sapma_yuzdesi("fx", baz_indeks=2)
+    np.testing.assert_allclose(sapma, (seri - seri[2]) / abs(seri[2]) * 100, rtol=1e-12)
+    assert sapma[2] == 0.0 and sapma[0] < 0.0 < sapma[3]
 
 
 def test_taban_uzunlugu_taban_uzunluktan_gelir():

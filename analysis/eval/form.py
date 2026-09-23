@@ -104,7 +104,14 @@ class FormRaporu:
 
     @property
     def genel_karar(self) -> Karar:
-        """Bir kusur bile kesinse KUSURLU; degilse belirsizlik varsa BELIRSIZ."""
+        """Bir kusur bile kesinse KUSURLU; degilse belirsizlik varsa BELIRSIZ.
+
+        KUSURLU'nun BELIRSIZ'e ustun gelmesi bilinclidir (dis inceleme F.4):
+        kesin bir kusur, baska olcumlerin belirsiz olmasindan etkilenmez --
+        kullaniciya "diz valgusu var" demek icin kalca hizasinin bilinmesi
+        gerekmez. Tersi (bir belirsiz varsa genel belirsiz) kesin bir kusuru
+        gizlerdi; bu, kacirmayi artiran tehlikeli yondur.
+        """
         kararlar = {o.karar for o in self.olcumler.values()}
         if Karar.KUSURLU in kararlar:
             return Karar.KUSURLU
@@ -262,16 +269,26 @@ def _tum_olcumler(P: np.ndarray, tanim: IskeletTanimi) -> dict[str, float]:
 
 # --- karar -------------------------------------------------------------------
 
-def _karar_ver(deger: float, esik: Esik, belirsizlik: float, k: float) -> Karar:
+def _karar_ver(deger: float, esik: Esik, belirsizlik: float | None, k: float) -> Karar:
     """Esigi belirsizlik bandiyla karsilastirir.
 
     Band esigi kesiyorsa karar verilmez. Bu, tezin iddiasinin kod karsiligidir:
     olcum hatasi karar sinirindan buyukse o kare hakkinda konusulamaz.
+
+    Iki durum **ayridir** (dis inceleme F.1):
+
+    - `belirsizlik is None` -- belirsizlik istenmedi: yalin esik karsilastirmasi.
+    - `belirsizlik` NaN -- istendi ama hesaplanamadi: karar **verilmez**.
+      Onceden ikisi de yalin esige dusuyordu; boylece belirsizlik analizi
+      sessizce devre disi kalir ve sistem en belirsiz durumda en kesin cevabi
+      verirdi.
     """
     if not np.isfinite(deger):
         return Karar.BELIRSIZ
     gozlenen = deger if esik.tek_yonlu else abs(deger)
-    if not np.isfinite(belirsizlik) or belirsizlik <= 0.0:
+    if belirsizlik is not None and not (np.isfinite(belirsizlik) and belirsizlik >= 0.0):
+        return Karar.BELIRSIZ
+    if belirsizlik is None or belirsizlik == 0.0:
         return Karar.KUSURLU if gozlenen > esik.deger else Karar.DOGRU
     pay = k * belirsizlik
     if gozlenen - pay > esik.deger:
@@ -279,6 +296,60 @@ def _karar_ver(deger: float, esik: Esik, belirsizlik: float, k: float) -> Karar:
     if gozlenen + pay < esik.deger:
         return Karar.DOGRU
     return Karar.BELIRSIZ
+
+
+# Monte Carlo orneklerinin en az bu kadari sonlu olmali; altindaysa olcum
+# tekillige yakin demektir ve sapma guvenilmez.
+ASGARI_GECERLI_ORNEK_ORANI = 0.95
+
+
+def _karekok_faktorleri(konum_belirsizligi_m, iskelet: Iskelet3B) -> np.ndarray:
+    """Eklem basina (3, 3) karekok faktoru L (Cov = L L^T) -- ornekleme icin.
+
+    Kabul edilen bicimler:
+
+    - skaler (metre) -- butun eklemler, her eksen ayni sigma (izotrop).
+    - (N,) -- eklem basina izotrop sigma.
+    - (N, 3, 3) ya da N elemanli liste -- eklem basina **kovaryans** (metre^2),
+      `uncertainty.eklem.eklem_kovaryanslari`'nin ciktisi. `None`/NaN yalnizca
+      gorunmeyen eklemde kabul edilir (o eklemin olcumu zaten NaN).
+
+    Neden kovaryans (dis inceleme YC.5): duzenekte eklem belirsizligi yone gore
+    4,5 kat degisiyor (`docs/kararlar/0013`). Izotrop sigma en kotu ekseni her
+    yone yayar ve karari gereksiz yere BELIRSIZ'e iter; tek gorus telefonda da
+    hata derinlik ekseninde yogunlasir.
+    """
+    n = len(iskelet.tanim)
+    if isinstance(konum_belirsizligi_m, (list, tuple)) and len(konum_belirsizligi_m) == n \
+            and any(c is None or np.ndim(c) == 2 for c in konum_belirsizligi_m):
+        konum_belirsizligi_m = np.stack([
+            np.full((3, 3), np.nan) if c is None else np.asarray(c, dtype=float)
+            for c in konum_belirsizligi_m])
+    girdi = np.asarray(konum_belirsizligi_m, dtype=float)
+    if girdi.ndim <= 1:
+        sigma = np.full(n, float(girdi)) if girdi.ndim == 0 else girdi
+        if sigma.shape != (n,):
+            raise ValueError("konum_belirsizligi_m skaler, (N,) ya da (N, 3, 3) olmali")
+        if not np.all(np.isfinite(sigma)) or np.any(sigma < 0):
+            raise ValueError("konum_belirsizligi_m sonlu ve negatif olmayan olmali")
+        return sigma[:, None, None] * np.eye(3)
+    if girdi.shape != (n, 3, 3):
+        raise ValueError(f"kovaryans (N, 3, 3) olmali, {girdi.shape} geldi")
+    L = np.zeros((n, 3, 3))
+    for j in range(n):
+        C = girdi[j]
+        if not np.isfinite(C).all():
+            if iskelet.gorunur[j]:
+                raise ValueError(
+                    f"gorunur eklem icin kovaryans sonlu olmali: {iskelet.tanim.eklemler[j]}")
+            continue
+        if not np.allclose(C, C.T, atol=1e-12):
+            raise ValueError(f"kovaryans simetrik olmali: {iskelet.tanim.eklemler[j]}")
+        w, V = np.linalg.eigh(C)
+        if w.min() < -1e-12 * max(1.0, abs(w).max()):
+            raise ValueError(f"kovaryans pozitif yari tanimli olmali: {iskelet.tanim.eklemler[j]}")
+        L[j] = V * np.sqrt(np.clip(w, 0.0, None))
+    return L
 
 
 def _belirsizlikler(iskelet: Iskelet3B, konum_belirsizligi_m, n_ornek: int,
@@ -290,24 +361,28 @@ def _belirsizlikler(iskelet: Iskelet3B, konum_belirsizligi_m, n_ornek: int,
     sabit verildigi icin sonuc tekrarlanabilir -- `make reproduce` ayni sayiyi
     uretir.
     """
-    sigma = np.asarray(konum_belirsizligi_m, dtype=float)
-    if sigma.ndim == 0:
-        sigma = np.full(len(iskelet.tanim), float(sigma))
-    if sigma.shape != (len(iskelet.tanim),):
-        raise ValueError("konum_belirsizligi_m skaler ya da eklem sayisi kadar olmali")
-    if not np.all(np.isfinite(sigma)) or np.any(sigma < 0):
-        raise ValueError("konum_belirsizligi_m sonlu ve negatif olmayan olmali")
+    L = _karekok_faktorleri(konum_belirsizligi_m, iskelet)
+    if type(n_ornek) is not int or n_ornek < 2:
+        # Tek ornekten standart sapma cikmaz; NaN'a dusup sessizce yalin esige
+        # donmesin (dis inceleme F.1).
+        raise ValueError(f"n_ornek en az 2 olmali, {n_ornek} geldi")
 
     rng = np.random.default_rng(seed)
     P = iskelet.noktalar
     birikim: dict[str, list[float]] = {ad: [] for ad in _GEREKLI}
     for _ in range(n_ornek):
-        bozuk = P + rng.normal(0.0, 1.0, size=P.shape) * sigma[:, None]
+        # Izotrop durumda L = sigma*I ve bu, onceki `P + z*sigma` ile bit bit
+        # ayni ornegi uretir (sayi kilidi bunu denetler).
+        bozuk = P + np.einsum("nij,nj->ni", L, rng.normal(0.0, 1.0, size=P.shape))
         for ad, deger in _tum_olcumler(bozuk, iskelet.tanim).items():
             if np.isfinite(deger):
                 birikim[ad].append(deger)
+    # Orneklerin bir kismi tanimsiz cikiyorsa (tekillik yakininda arccos/arctan2)
+    # kalan orneklerden hesaplanan sapma yanlidir ve eksik kalan kismi gizler
+    # (dis inceleme F.2). Yeterli gecerli ornek yoksa sapma NaN -> karar BELIRSIZ.
+    asgari = max(2, int(np.ceil(ASGARI_GECERLI_ORNEK_ORANI * n_ornek)))
     return {
-        ad: float(np.std(v, ddof=1)) if len(v) > 1 else float("nan")
+        ad: float(np.std(v, ddof=1)) if len(v) >= asgari else float("nan")
         for ad, v in birikim.items()
     }
 
@@ -315,7 +390,7 @@ def _belirsizlikler(iskelet: Iskelet3B, konum_belirsizligi_m, n_ornek: int,
 def form_degerlendir(
     iskelet: Iskelet3B,
     esikler: dict[str, Esik] | None = None,
-    konum_belirsizligi_m: float | np.ndarray | None = None,
+    konum_belirsizligi_m: float | np.ndarray | list | None = None,
     n_ornek: int = 200,
     seed: int = 20260922,
     k: float = VARSAYILAN_K,
@@ -323,7 +398,8 @@ def form_degerlendir(
     """Bir 3B iskeletten form raporu uretir.
 
     `konum_belirsizligi_m` verilirse (ucgenlemeden gelen 1-sigma eklem konum
-    belirsizligi, metre) kararlar belirsizlik bandiyla verilir; verilmezse
+    belirsizligi, metre; ya da eklem basina (3, 3) kovaryans, bkz.
+    `_karekok_faktorleri`) kararlar belirsizlik bandiyla verilir; verilmezse
     yalin esik karsilastirmasi yapilir ve `belirsizlik` NaN kalir.
 
     Gorunmeyen eklem **uydurulmaz**: o eklemi gerektiren olcum NaN doner ve
@@ -334,7 +410,7 @@ def form_degerlendir(
     degerler = _tum_olcumler(iskelet.noktalar, tanim)
 
     if konum_belirsizligi_m is None:
-        sapmalar = {ad: float("nan") for ad in _GEREKLI}
+        sapmalar = None                   # istenmedi: yalin esik
     else:
         sapmalar = _belirsizlikler(iskelet, konum_belirsizligi_m, n_ornek, seed)
 
@@ -347,10 +423,12 @@ def form_degerlendir(
             e for e in gerekli if not iskelet.gorunur[tanim.indeks(e)]
         )
         deger = float("nan") if eksik else degerler[ad]
-        sapma = float("nan") if eksik else sapmalar[ad]
+        sapma = None if sapmalar is None else (
+            float("nan") if eksik else sapmalar[ad])
         esik = esikler[ad]
         olcumler[ad] = Olcum(
-            ad=ad, deger=deger, esik=esik.deger, belirsizlik=sapma,
+            ad=ad, deger=deger, esik=esik.deger,
+            belirsizlik=float("nan") if sapma is None else sapma,
             karar=_karar_ver(deger, esik, sapma, k), eksik_eklemler=eksik,
         )
     return FormRaporu(olcumler=olcumler)
@@ -372,6 +450,15 @@ _NOMINAL: dict[str, tuple[float, float, float]] = {
 
 _UST_GOVDE = ("sag_omuz", "sol_omuz", "sag_dirsek", "sol_dirsek",
               "sag_bilek", "sol_bilek")
+
+# Sentetik durus isimle kurulur; referans iskelet degisirse (eklem eklenir ya da
+# yeniden adlandirilirsa) burada yuklenirken durulur, `sentetik_durus`'ta
+# anlasilmaz bir KeyError ya da sessizce eksik iskelet cikmaz (dis inceleme F.5).
+if set(_NOMINAL) != set(REFERANS_ISKELET.eklemler) or not set(_UST_GOVDE) <= set(_NOMINAL):
+    raise ImportError(
+        "eval.form sentetik durus sablonu REFERANS_ISKELET ile uyusmuyor: "
+        f"eksik={sorted(set(REFERANS_ISKELET.eklemler) - set(_NOMINAL))}, "
+        f"fazla={sorted(set(_NOMINAL) - set(REFERANS_ISKELET.eklemler))}")
 
 
 def _donme(eksen: np.ndarray, aci_derece: float) -> np.ndarray:

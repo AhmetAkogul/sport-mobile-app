@@ -223,3 +223,92 @@ def test_esikler_raporda_tasinir():
     rapor = form_degerlendir(sentetik_durus())
     for ad, esik in VARSAYILAN_ESIKLER.items():
         assert rapor.olcumler[ad].esik == esik.deger
+
+
+# --- dis inceleme F.1 / F.2: hesaplanamayan belirsizlik kesin karar uretmez ----
+
+@pytest.mark.parametrize("n", [0, 1])
+def test_tek_ornekle_belirsizlik_istenirse_hata(n):
+    """Tek ornekten sapma cikmaz; NaN'a dusup yalin esige donmemeli."""
+    with pytest.raises(ValueError, match="n_ornek en az 2"):
+        form_degerlendir(sentetik_durus(valgus_sag=11.0),
+                         konum_belirsizligi_m=0.01, n_ornek=n)
+
+
+def test_hesaplanamayan_belirsizlik_karar_uretmez():
+    """Belirsizlik istendi ama NaN: sonuc BELIRSIZ, yalin esik degil."""
+    from eval.form import _karar_ver
+    esik = VARSAYILAN_ESIKLER["diz_valgusu_sag"]
+    assert _karar_ver(25.0, esik, float("nan"), 2.0) is Karar.BELIRSIZ
+    # istenmediyse (None) yalin esik: acik bir kusur kusurlu kalir
+    assert _karar_ver(25.0, esik, None, 2.0) is Karar.KUSURLU
+    # sifir belirsizlik gecerli bir olcumdur: yalin esik
+    assert _karar_ver(25.0, esik, 0.0, 2.0) is Karar.KUSURLU
+
+
+def test_ornekleri_cogunlukla_tanimsiz_olcum_belirsiz_kalir(monkeypatch):
+    """Monte Carlo orneklerinin %5'inden fazlasi NaN ise sapma guvenilmez."""
+    import eval.form as form
+
+    gercek = form._tum_olcumler
+    sayac = {"n": 0}
+
+    def yarisi_nan(noktalar, tanim):
+        sayac["n"] += 1
+        d = gercek(noktalar, tanim)
+        if sayac["n"] % 2 == 0:
+            d = {**d, "diz_valgusu_sag": float("nan")}
+        return d
+
+    monkeypatch.setattr(form, "_tum_olcumler", yarisi_nan)
+    rapor = form_degerlendir(sentetik_durus(valgus_sag=25.0), konum_belirsizligi_m=0.001)
+    assert rapor.olcumler["diz_valgusu_sag"].karar is Karar.BELIRSIZ
+    assert np.isnan(rapor.olcumler["diz_valgusu_sag"].belirsizlik)
+
+
+# --- dis inceleme YC.5: eklem basina kovaryans --------------------------------
+
+def test_izotrop_kovaryans_skaler_sigma_ile_bit_bit_ayni():
+    """sigma^2 * I kovaryansi, skaler sigma ile ayni ornekleri uretmeli."""
+    iskelet = sentetik_durus(valgus_sag=11.0)
+    n = len(iskelet.tanim)
+    skaler = form_degerlendir(iskelet, konum_belirsizligi_m=0.01)
+    kov = form_degerlendir(iskelet, konum_belirsizligi_m=np.tile(1e-4 * np.eye(3), (n, 1, 1)))
+    for ad in skaler.olcumler:
+        assert kov.olcumler[ad].belirsizlik == skaler.olcumler[ad].belirsizlik
+        assert kov.olcumler[ad].karar is skaler.olcumler[ad].karar
+
+
+def test_yalniz_derinlik_eksenindeki_belirsizlik_onden_aciyi_az_etkiler():
+    """Onden bakan telefonda hata derinlikte (Z); valgus goruntu duzleminde.
+
+    Ayni buyuklukte belirsizlik yalniz Z'de ise valgus belirsizligi, izotrop
+    durumdakinden kucuk cikmali -- izotrop sigma karari gereksiz yere susturur.
+    """
+    iskelet = sentetik_durus(valgus_sag=14.0)
+    n = len(iskelet.tanim)
+    s = 0.03
+    izotrop = form_degerlendir(iskelet, konum_belirsizligi_m=s)
+    yalniz_z = form_degerlendir(
+        iskelet, konum_belirsizligi_m=np.tile(np.diag([0.0, 0.0, s * s]), (n, 1, 1)))
+    ad = "diz_valgusu_sag"
+    assert yalniz_z.olcumler[ad].belirsizlik < izotrop.olcumler[ad].belirsizlik
+
+
+def test_eklem_kovaryanslari_listesi_dogrudan_verilebilir():
+    """uncertainty.eklem.eklem_kovaryanslari ciktisi (liste, gorunmezde None)."""
+    iskelet = sentetik_durus(valgus_sag=11.0)
+    liste = [1e-4 * np.eye(3) for _ in iskelet.tanim.eklemler]
+    rapor = form_degerlendir(iskelet, konum_belirsizligi_m=liste)
+    assert np.isfinite(rapor.olcumler["diz_valgusu_sag"].belirsizlik)
+
+
+@pytest.mark.parametrize("bozuk,mesaj", [
+    (np.tile(np.array([[1e-4, 1e-5, 0], [0, 1e-4, 0], [0, 0, 1e-4]]), (13, 1, 1)), "simetrik"),
+    (np.tile(np.diag([1e-4, -1e-4, 1e-4]), (13, 1, 1)), "yari tanimli"),
+    (np.full((13, 3, 3), np.nan), "sonlu"),
+    (np.zeros((13, 2, 2)), r"\(N, 3, 3\)"),
+])
+def test_bozuk_kovaryans_reddedilir(bozuk, mesaj):
+    with pytest.raises(ValueError, match=mesaj):
+        form_degerlendir(sentetik_durus(), konum_belirsizligi_m=bozuk)

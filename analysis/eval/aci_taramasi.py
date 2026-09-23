@@ -34,19 +34,45 @@ from pose3d.pose2d import Poz2B, sentetik_poz
 # gozlem yok" demektir (ornegin gercek kayitta o aci cekilmemis).
 PozUreteci = Callable[[float, Iskelet3B], Poz2B | None]
 
+# Durus basina kemik uzunlugu onculeri ureten sozlesme. Gercek kullanicinin
+# kemik uzunluklari bilinmedigi icin oncu hatasinin etkisi boyle olculur.
+OnculUreteci = Callable[[Iskelet3B], UzunlukOnculeri]
+
 
 @dataclass(frozen=True)
 class KararSayimi:
-    """Bir olcumun bir acidaki karar dagilimi."""
+    """Bir olcumun bir acidaki karar dagilimi.
+
+    `yanlis` iki turun toplamidir ve ikisi **ayri** sayilir (dis inceleme A.2),
+    cunku zararlari farklidir:
+
+    - `kacirma`      -- yer gercegi KUSURLU, telefon DOGRU dedi. Tehlikeli olan
+      budur: kullanici hatali formla devam eder.
+    - `yanlis_alarm` -- yer gercegi DOGRU, telefon KUSURLU dedi. Can sikici ama
+      zararsiz.
+
+    `referanssiz`: yer gercegi kararinin kendisi verilemedi (eksik eklem);
+    telefon ne derse desin dogru/yanlis sayilamaz.
+    """
 
     dogru: int = 0
     yanlis: int = 0
     belirsiz: int = 0
     gozlemsiz: int = 0
+    kacirma: int = 0
+    yanlis_alarm: int = 0
+    referanssiz: int = 0
+
+    def __post_init__(self) -> None:
+        if self.kacirma + self.yanlis_alarm != self.yanlis:
+            raise ValueError(
+                f"yanlis ({self.yanlis}) = kacirma ({self.kacirma}) + "
+                f"yanlis_alarm ({self.yanlis_alarm}) olmali")
 
     @property
     def toplam(self) -> int:
-        return self.dogru + self.yanlis + self.belirsiz + self.gozlemsiz
+        return (self.dogru + self.yanlis + self.belirsiz + self.gozlemsiz
+                + self.referanssiz)
 
     @property
     def dogruluk(self) -> float:
@@ -67,6 +93,17 @@ class KararSayimi:
         """
         n = self.dogru + self.yanlis
         return self.yanlis / n if n else float("nan")
+
+    @property
+    def kacirma_orani(self) -> float:
+        """Karar verilenler icinde kacirilan kusur orani (tehlikeli hata)."""
+        n = self.dogru + self.yanlis
+        return self.kacirma / n if n else float("nan")
+
+    @property
+    def yanlis_alarm_orani(self) -> float:
+        n = self.dogru + self.yanlis
+        return self.yanlis_alarm / n if n else float("nan")
 
 
 @dataclass(frozen=True)
@@ -103,7 +140,9 @@ class TaramaSonucu:
                                 else round(s.yanlis_karar_orani, 4)
                             ),
                             "dogru": s.dogru, "yanlis": s.yanlis,
+                            "kacirma": s.kacirma, "yanlis_alarm": s.yanlis_alarm,
                             "belirsiz": s.belirsiz, "gozlemsiz": s.gozlemsiz,
+                            "referanssiz": s.referanssiz,
                             "aci_hatasi_derece": (
                                 None if not np.isfinite(n.aci_hatasi_derece[ad])
                                 else round(n.aci_hatasi_derece[ad], 3)
@@ -166,9 +205,14 @@ def sentetik_poz_ureteci(
 
 
 def _sonuc(dogru_karar: Karar, telefon_karar: Karar) -> str:
+    """Tek karsilastirmanin sayaci. Yanlis karar turuyle birlikte doner."""
+    if dogru_karar is Karar.BELIRSIZ:
+        return "referanssiz"
     if telefon_karar is Karar.BELIRSIZ:
         return "belirsiz"
-    return "dogru" if telefon_karar is dogru_karar else "yanlis"
+    if telefon_karar is dogru_karar:
+        return "dogru"
+    return "kacirma" if dogru_karar is Karar.KUSURLU else "yanlis_alarm"
 
 
 def aci_taramasi(
@@ -176,10 +220,10 @@ def aci_taramasi(
     acilar_derece: Iterable[float],
     poz_uret: PozUreteci,
     K: np.ndarray,
-    onculer: UzunlukOnculeri | None = None,
+    onculer: UzunlukOnculeri | OnculUreteci | None = None,
     esikler: dict[str, Esik] | None = None,
     tanim: IskeletTanimi = REFERANS_ISKELET,
-    konum_belirsizligi_m: float | None = None,
+    konum_belirsizligi_m: float | np.ndarray | None = None,
 ) -> TaramaSonucu:
     """Her aci icin telefon kararini yer gercegi karariyla karsilastirir.
 
@@ -188,18 +232,33 @@ def aci_taramasi(
     verilen acidan telefon hattindan gecirilip karari alinir.
 
     `onculer` verilmezse her durus icin kendi yer gercegi kemik uzunluklari
-    kullanilir (bkz. `kemik_onculeri` -- iyimser varsayim).
+    kullanilir (bkz. `kemik_onculeri` -- iyimser varsayim). Sabit bir sozluk ya
+    da durus basina uretec (`OnculUreteci`) verilebilir; ikincisi oncu hatasinin
+    etkisini olcmek icin gerekli, cunku hata durus basina bagimsiz cekilmeli.
     """
     duruslar = list(duruslar)
     if not duruslar:
         raise ValueError("en az bir durus gerekli")
+    # Dis inceleme A.1: bos/tekrarli/sonlu olmayan aci ve bozuk K sessizce
+    # bos egri ya da anlasilmaz bir cokus uretmesin.
+    acilar = [float(a) for a in acilar_derece]
+    if not acilar:
+        raise ValueError("en az bir aci gerekli")
+    if not all(np.isfinite(a) for a in acilar):
+        raise ValueError(f"acilar sonlu olmali: {acilar}")
+    if len(set(acilar)) != len(acilar):
+        raise ValueError(f"tekrarli aci: {acilar} -- ayni aci iki kez sayilirdi")
+    K = np.asarray(K, dtype=np.float64)
+    if K.shape != (3, 3) or not np.isfinite(K).all():
+        raise ValueError(f"K (3, 3) ve sonlu olmali, {K.shape} geldi")
 
     gercek = [form_degerlendir(d, esikler=esikler) for d in duruslar]
     adlar = tuple(gercek[0].olcumler)
 
     noktalar: list[TaramaNoktasi] = []
-    for aci in acilar_derece:
-        sayim = {ad: {"dogru": 0, "yanlis": 0, "belirsiz": 0, "gozlemsiz": 0}
+    for aci in acilar:
+        sayim = {ad: {"dogru": 0, "kacirma": 0, "yanlis_alarm": 0, "belirsiz": 0,
+                      "gozlemsiz": 0, "referanssiz": 0}
                  for ad in adlar}
         hatalar: dict[str, list[float]] = {ad: [] for ad in adlar}
 
@@ -209,7 +268,13 @@ def aci_taramasi(
                 for ad in adlar:
                     sayim[ad]["gozlemsiz"] += 1
                 continue
-            kestirim = tek_gorus_3b(poz, K, onculer or kemik_onculeri(durus), tanim)
+            if onculer is None:
+                durus_onculeri = kemik_onculeri(durus)
+            elif callable(onculer):
+                durus_onculeri = onculer(durus)
+            else:
+                durus_onculeri = onculer
+            kestirim = tek_gorus_3b(poz, K, durus_onculeri, tanim)
             telefon_rapor = form_degerlendir(
                 kestirim, esikler=esikler,
                 konum_belirsizligi_m=konum_belirsizligi_m,
@@ -224,7 +289,8 @@ def aci_taramasi(
 
         noktalar.append(TaramaNoktasi(
             aci_derece=float(aci),
-            sayimlar={ad: KararSayimi(**s) for ad, s in sayim.items()},
+            sayimlar={ad: KararSayimi(yanlis=s["kacirma"] + s["yanlis_alarm"], **s)
+                      for ad, s in sayim.items()},
             aci_hatasi_derece={
                 ad: float(np.mean(v)) if v else float("nan")
                 for ad, v in hatalar.items()

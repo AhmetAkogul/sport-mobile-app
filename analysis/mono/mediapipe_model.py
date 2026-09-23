@@ -1,6 +1,6 @@
 """MediaPipe Tasks modelini mevcut Poz2B sözleşmesine bağlar."""
 
-import hashlib
+from dataclasses import replace
 import math
 import sys
 from pathlib import Path
@@ -8,22 +8,39 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from capture.alignment import file_sha256
 from pose3d.adaptorler import mediapipe_poz2b
 from pose3d.iskelet import REFERANS_ISKELET
 from pose3d.pose2d import Poz2B
 
 
+def _sayisal_surum(metin: str) -> tuple[int, ...]:
+    """'1.0.0.post1' -> (1, 0, 0); sayisal olmayan ilk parcada durur."""
+    parcalar: list[int] = []
+    for parca in str(metin).split("."):
+        if not parca.isdigit():
+            break
+        parcalar.append(int(parca))
+    return tuple(parcalar)
+
+
 def result_to_pose(result, size, *, model, threshold=0.5):
-    """Tespit yoksa görünmez poz döner; eski karenin pozunu taşımaz."""
+    """Tespit yoksa görünmez poz döner; eski karenin pozunu taşımaz.
+
+    "Tespit var mı" bilgisi artık `ek["tespit"]` sözlüğünde değil, `Poz2B.tespit`
+    alanında taşınır: yeni bir adaptör yazarken unutulması sessiz bir hataya
+    dönüşemez, çünkü alan zorunludur.
+    """
     if not result.pose_landmarks:
+        # Tespit yoksa koordinat da yoktur: NaN yazilir, 0.0 (goruntunun sol ust
+        # kosesi) gibi gecerli gorunen bir deger yazilmaz (tek eksik veri politikasi).
         n = len(REFERANS_ISKELET)
-        return Poz2B(REFERANS_ISKELET, np.zeros((n, 2)), np.zeros(n), np.zeros(n, bool),
-                     size, model=model, ek={"tespit": False})
+        return Poz2B(REFERANS_ISKELET, np.full((n, 2), np.nan), np.zeros(n),
+                     np.zeros(n, bool), False, size, model=model)
     if len(result.pose_landmarks) != 1:
         raise ValueError("Tek kişi sözleşmesinde birden fazla poz döndü.")
-    pose = mediapipe_poz2b(result.pose_landmarks[0], size, guven_esigi=threshold, model=model)
-    pose.ek["tespit"] = True
-    return pose
+    return mediapipe_poz2b(result.pose_landmarks[0], size, guven_esigi=threshold,
+                           model=model, tespit=True)
 
 
 class MediaPipeEstimator:
@@ -40,15 +57,29 @@ class MediaPipeEstimator:
         if not path.is_file():
             raise FileNotFoundError(path)
         import mediapipe as mp
-        if sys.platform == "darwin" and mp.__version__ in {"1.0.0", "1.0.1"}:
-            raise RuntimeError("Bu Mac için MediaPipe 0.10.35 kullanın; 1.0.x yerel süreç çökmesine yol açabilir.")
+        surum = _sayisal_surum(mp.__version__)
+        # Koruma "1.0.0 ve 1.0.1" ile sinirli degil: sikayet edilen davranis 1.0
+        # hattinin tamami icin gecerli (0030). '1.0.2' cikarsa koruma kalkmaz;
+        # 1.1+ dogrulanmadigi icin engellenmez, denenip karar kaydina yazilmali.
+        if sys.platform == "darwin" and surum[:2] == (1, 0):
+            raise RuntimeError(
+                f"Bu Mac için MediaPipe 0.10.35 kullanın; {mp.__version__} yerel süreç "
+                "çökmesine yol açabilir (docs/kararlar/0030).")
         from mediapipe.tasks.python import BaseOptions
         from mediapipe.tasks.python.vision import PoseLandmarker, PoseLandmarkerOptions, RunningMode
-        self.sha256 = hashlib.sha256(path.read_bytes()).hexdigest()
-        self.model_id = f"mediapipe-{mp.__version__}/pose_landmarker/sha256:{self.sha256}"
+        # capture.alignment'taki tek sha256 uygulamasi kullanilir (tum dosyayi
+        # belleğe alan ikinci bir kopya yok).
+        self.sha256 = file_sha256(path)
+        # Varyant (lite/full/heavy) model kimliginde gorunur; aksi halde üç ay
+        # sonra "hangi MediaPipe" sorusu karar kaydina bakmadan cevaplanamaz.
+        self.model_id = (f"mediapipe-{mp.__version__}/{path.stem}"
+                         f"/sha256:{self.sha256}")
         self.threshold = threshold
         self._mp = mp
         self._closed = False
+        # CPU delegate bilincli: donanim bagimsiz ve iki backend ayni kaynak
+        # kosullarinda olculsun (GPU delegate olsaydi B2 tablosu donanima bagli
+        # olurdu). GPU yolu denenirse karar kaydinda ayrica belirtilmeli.
         options = PoseLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(path.resolve()), delegate=BaseOptions.Delegate.CPU),
             running_mode=RunningMode.IMAGE, num_poses=1,
@@ -66,8 +97,9 @@ class MediaPipeEstimator:
         rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         result = self._detector.detect(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb))
         pose = result_to_pose(result, (width, height), model=self.model_id, threshold=self.threshold)
-        pose.ek.update(model_sha256=self.sha256, running_mode="IMAGE", device="CPU")
-        return pose
+        # `replace`: Poz2B frozen; `ek.update` yerine yeni bir kopya uretilir.
+        return replace(pose, ek={**pose.ek, "model_sha256": self.sha256,
+                                 "running_mode": "IMAGE", "device": "CPU"})
 
     def close(self):
         if not self._closed:

@@ -1,4 +1,6 @@
 # İzole RTMPose ortamı. RTMLib ayrı --no-deps kurulur; README gerekçeyi açıklar.
+# -r ../requirements.txt bilinçli olarak yok: sürümler requirements-lock.txt ile
+# aynı sabitlenir (OpenCV contrib, numpy, scipy). Gerekçe: docs/kararlar/0033.
 opencv-contrib-python==5.0.0.93
 numpy==2.5.3
 onnxruntime==1.30.0

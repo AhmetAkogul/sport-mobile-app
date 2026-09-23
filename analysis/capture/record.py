@@ -47,7 +47,13 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None, sour
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=False)
     batches = output / "batches"
-    batches.mkdir()
+    try:
+        batches.mkdir()
+    except BaseException:
+        # Yarıda kalan dizin sonraki denemeyi `exist_ok=False` yüzünden kilitler;
+        # kullanıcı elle silmek zorunda kalmasın (dış inceleme C.3.1).
+        shutil.rmtree(output, ignore_errors=True)
+        raise
     metadata = {
         "schema_version": 1, "config": config.to_dict(), "started_at_utc": _utc(),
         "status": "recording", "completed_batches": 0,
@@ -70,6 +76,8 @@ def record_session(config, output_dir, *, max_frames, capture_factory=None, sour
                 raise RuntimeError(f"Kaynak açılamadı: {camera.camera_id}")
             settings_report = configure_source(handle, camera)
             metadata["camera_settings"][camera.camera_id] = settings_report
+            # Kamera basina yazim bilincli: acilis sirasinda surec cokerse diskte
+            # hangi kameranin hangi ayarla acildigi kalir (dis inceleme C.3.2).
             _write_json(output / "session.json", metadata)
             if settings_report["issues"]:
                 raise ValueError(f"Kamera ayarları doğrulanamadı: {camera.camera_id}: "

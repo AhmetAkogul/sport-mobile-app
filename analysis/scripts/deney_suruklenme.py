@@ -447,7 +447,7 @@ def main() -> int:
     print(f"\nHaftalik bant uyarisi (kontrol kollari): "
           f"{uyari_yanlis_pozitif}/{uyari_toplam} yanlis pozitif "
           "-> tek haftayla karar verilmez, egim testi kullanilir")
-    print(f"Kabul edilebilir tespit edilen en kucuk suruklenme (birim/hafta):")
+    print("Kabul edilebilir tespit edilen en kucuk suruklenme (birim/hafta):")
     for s in SENARYOLAR:
         print(f"  {s.ad:16} 0,25 px: {en_kucuk_025[s.ad]}   0,10 px: {en_kucuk_010[s.ad]}")
     print(f"\nKABUL OLCUTLERI: {'GECTI' if gecti else 'KALDI'}")

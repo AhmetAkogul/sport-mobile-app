@@ -36,15 +36,52 @@ import numpy as np
 from eval.metrics import ReprojectionError, reprojection_error
 
 
+# OpenCV bozulma parametre sayilari: fisheye 4 (k1..k4), pinhole 5 (k1,k2,p1,p2,k3).
+# Fisheye'ye 5 verilirse OpenCV ya sonuncuyu sessizce yok sayar ya da hata verir;
+# her iki durumda da davranis belirsizdir. Dis inceleme B.4.1.
+BOZULMA_FISHEYE = 4
+BOZULMA_PINHOLE = 5
+
+
+def bozulma_uzunlugu(balik_gozu: bool) -> int:
+    """Modele gore beklenen bozulma vektoru uzunlugu."""
+    return BOZULMA_FISHEYE if balik_gozu else BOZULMA_PINHOLE
+
+
 @dataclass
 class Kalibrasyon:
-    """Kalibrasyon sonucu. Uzunluk birimi board'un kare kenariyla ayni (metre)."""
+    """Kalibrasyon sonucu. Uzunluk birimi board'un kare kenariyla ayni (metre).
+
+    `modeller` kamera basina "pinhole" / "fisheye" tasir. Bos birakilirsa
+    pinhole varsayilir; bu bilgi kayitta korunmazsa 4 elemanli fisheye bozulmasi
+    5 elemanli pinhole'a tamamlanip **hangi modelle uretildigi kaybolur**
+    (B.3.2). Kayip, sonradan tespit edilemeyen sessiz bir matematik hatasidir.
+    """
 
     rms_px: float
     Ks: list[np.ndarray]
     bozulmalar: list[np.ndarray]
     Rs: list[np.ndarray]          # kamera 0'a gore rotasyon (3,3)
     Ts: list[np.ndarray]          # kamera 0'a gore oteleme (3,1)
+    modeller: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        """Liste uzunluklari ve K sekilleri (B.4.3).
+
+        Tutarsizlik burada yakalanmazsa io katmaninda **okuma** aninda patlar ve
+        hatanin kaynagi gizlenir.
+        """
+        n = len(self.Ks)
+        if not (len(self.bozulmalar) == len(self.Rs) == len(self.Ts) == n):
+            raise ValueError(
+                f"kamera listeleri uyusmuyor: {n} K, {len(self.bozulmalar)} bozulma, "
+                f"{len(self.Rs)} R, {len(self.Ts)} T")
+        if self.modeller and len(self.modeller) != n:
+            raise ValueError(
+                f"modeller {len(self.modeller)} eleman, {n} kamera var")
+        for i, K in enumerate(self.Ks):
+            if np.asarray(K).shape != (3, 3):
+                raise ValueError(f"Ks[{i}] (3,3) olmali, {np.asarray(K).shape} geldi")
 
     @property
     def n_kamera(self) -> int:
@@ -70,7 +107,17 @@ def _rotasyon_matrisi(R) -> np.ndarray:
 
 
 def _dogrula(obj_noktalari, img_noktalari, mask) -> None:
+    # Dis inceleme B.4.2: mask sekli ve degerleri, obj noktalarinin boyutu.
+    mask = np.asarray(mask)
+    if mask.ndim != 2:
+        raise ValueError(f"detectionMask 2 boyutlu (kamera, kare) olmali, {mask.shape} geldi")
+    if not np.isin(mask, (0, 1)).all():
+        raise ValueError("detectionMask yalnizca 0/1 icermeli")
     n_kamera, n_kare = mask.shape
+    for kare, obj in enumerate(obj_noktalari):
+        o = np.asarray(obj)
+        if o.size and (o.ndim != 2 or o.shape[1] != 3):
+            raise ValueError(f"objPoints[{kare}] (N, 3) olmali, {o.shape} geldi")
     if len(obj_noktalari) != n_kare:
         raise ValueError(
             f"objPoints {len(obj_noktalari)} kare, mask {n_kare} kare gosteriyor")
@@ -108,14 +155,16 @@ def kalibre_et(
     model = cv2.CALIB_MODEL_FISHEYE if balik_gozu else cv2.CALIB_MODEL_PINHOLE
     modeller = np.array([model] * n_kamera, dtype=np.uint8)
     Ks = [np.eye(3) for _ in range(n_kamera)]
-    bozulmalar = [np.zeros(5) for _ in range(n_kamera)]
+    bozulmalar = [np.zeros(bozulma_uzunlugu(balik_gozu)) for _ in range(n_kamera)]
 
     rms, Ks, bozulmalar, Rs, Ts = cv2.calibrateMultiview(
         obj_noktalari, img_noktalari, list(boyutlar), mask, modeller, Ks, bozulmalar,
         None, None,
     )
+    ad = "fisheye" if balik_gozu else "pinhole"
     return Kalibrasyon(
         rms_px=float(rms),
+        modeller=tuple([ad] * n_kamera),
         Ks=[np.asarray(K, dtype=np.float64) for K in Ks],
         bozulmalar=[np.asarray(d, dtype=np.float64).ravel() for d in bozulmalar],
         Rs=[_rotasyon_matrisi(R) for R in Rs],

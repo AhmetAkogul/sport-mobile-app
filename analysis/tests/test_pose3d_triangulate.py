@@ -133,3 +133,51 @@ def test_olculu_cubuk_gecerli_uretim():
     assert uzun == pytest.approx(1.2)
     with pytest.raises(ValueError, match="en az 2"):
         olculu_cubuk(n_isaret=1)
+
+
+# --- dis inceleme T.1 / T.3 / T.6 --------------------------------------------
+
+def test_gecersiz_kamera_indeksi_reddediliyor(duzenek):
+    """Sozlukte olmayan kamera indeksi IndexError yerine net hata vermeli (T.1).
+
+    `iskelet_ucgenle` ucgenle'nin ValueError'unu yutuyor; IndexError ise
+    yutulmuyor ve hatti cokertiyor. Ikisi de kotu: biri sessiz, digeri
+    anlasilmaz. Sinir kontrolu basta yapilmali.
+    """
+    import numpy as np
+    import pytest
+    from pose3d.triangulate import ucgenle
+
+    _, kalib = duzenek
+    n = len(kalib.Ks)
+    gozlem = {0: np.array([100.0, 100.0]), n + 5: np.array([200.0, 200.0])}
+    with pytest.raises(ValueError, match="kamera indeksi"):
+        ucgenle(kalib, gozlem)
+
+
+def test_artik_px_sonsuz_olmaz(duzenek):
+    """Kamera duzlemine dusen nokta icin artik inf degil NaN olmali (T.3).
+
+    inf bir sayi gibi ortalamaya giriyor ve butun artigi inf yapiyor;
+    downstream kod bunu esikle karsilastirinca sessizce "cok kotu" diye
+    yorumluyor. "Hesaplanamadi" demek dogrusu.
+    """
+    import numpy as np
+    from pose3d.triangulate import Ucgenleme
+
+    u = Ucgenleme(nokta=np.zeros(3), goren_kamera=2, artik_px=float("inf"))
+    assert not np.isinf(u.artik_px)
+    assert np.isnan(u.artik_px)
+
+
+def test_ucgenleme_sekil_dogrulamasi():
+    """Ucgenleme dogrulamasiz bir sinifti; bozuk sekil sessizce yayiliyordu (T.6)."""
+    import numpy as np
+    import pytest
+    from pose3d.triangulate import Ucgenleme
+
+    with pytest.raises(ValueError, match="nokta"):
+        Ucgenleme(nokta=np.zeros(2), goren_kamera=2, artik_px=0.1)
+    with pytest.raises(ValueError, match="kovaryans"):
+        Ucgenleme(nokta=np.zeros(3), goren_kamera=2, artik_px=0.1,
+                  kovaryans=np.zeros((2, 2)))

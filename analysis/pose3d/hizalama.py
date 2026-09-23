@@ -32,8 +32,28 @@ class Hizalama:
     rms_mm: float            # hizalama sonrasi artik -- gercek sekil bozulmasi
     en_buyuk_mm: float
 
+    def __post_init__(self) -> None:
+        """Alan denetimi (H.2).
+
+        `rijit_hizala` dogru uretiyor ama disaridan kurulan (test, pickle, elle)
+        bir Hizalama bozuk olabilir ve `uygula` sessizce sacma sonuc verir.
+        """
+        self.R = np.asarray(self.R, dtype=np.float64)
+        self.t = np.asarray(self.t, dtype=np.float64).reshape(-1)
+        if self.R.shape != (3, 3):
+            raise ValueError(f"R (3,3) olmali, {self.R.shape} geldi")
+        if self.t.shape != (3,):
+            raise ValueError(f"t (3,) olmali, {self.t.shape} geldi")
+        if not np.isfinite(self.olcek) or self.olcek <= 0:
+            raise ValueError(f"olcek pozitif olmali, {self.olcek} geldi")
+        if self.rms_mm < 0 or self.en_buyuk_mm < 0:
+            raise ValueError("artik olculeri negatif olamaz")
+
     def uygula(self, noktalar: np.ndarray) -> np.ndarray:
-        n = np.asarray(noktalar, dtype=np.float64).reshape(-1, 3)
+        a = np.asarray(noktalar, dtype=np.float64)
+        if a.ndim == 0 or a.shape[-1] != 3:
+            raise ValueError(f"noktalar (..., 3) olmali, {a.shape} geldi")
+        n = a.reshape(-1, 3)
         return (self.olcek * (self.R @ n.T)).T + self.t
 
 
@@ -58,6 +78,13 @@ def rijit_hizala(
 
     A_ort, B_ort = A.mean(0), B.mean(0)
     A0, B0 = A - A_ort, B - B_ort
+
+    # Dejenere girdi: butun noktalar ayni yerdeyse donme tanimsizdir. SVD bos
+    # bir matriste keyfi bir R uretir ve olcek 1.0'a duser; sonuc anlamsiz ama
+    # gecerli gorunur. "3 nokta var" kontrolu bunu yakalamaz (H.1).
+    if float((A0 ** 2).sum()) < 1e-12 or float((B0 ** 2).sum()) < 1e-12:
+        raise ValueError(
+            "nokta kumesi dejenere: butun noktalar ayni yerde, donme tanimsiz")
 
     U, S, Vt = np.linalg.svd(A0.T @ B0)
     d = np.sign(np.linalg.det(Vt.T @ U.T))

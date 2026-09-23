@@ -85,21 +85,41 @@ def test_isim_esleme_tablosuyla_cevrilir():
 def test_eklem_sayisi_uyusmazsa_hata():
     with pytest.raises(ValueError, match="eklem sirasi esit varsayilamaz"):
         Poz2B(iskelet=ISK, noktalar=np.zeros((5, 2)), guven=np.ones(5),
-              gorunur=np.ones(5, bool), goruntu_boyutu=(1280, 720))
+              gorunur=np.ones(5, bool), tespit=True, goruntu_boyutu=(1280, 720))
 
 
 def test_gecersiz_uzay_reddedilir():
     n = len(ISK)
     with pytest.raises(ValueError, match="uzay"):
         Poz2B(iskelet=ISK, noktalar=np.zeros((n, 2)), guven=np.ones(n),
-              gorunur=np.ones(n, bool), goruntu_boyutu=(1280, 720), uzay="baska")
+              gorunur=np.ones(n, bool), tespit=True, goruntu_boyutu=(1280, 720),
+              uzay="baska")
+
+
+def test_uzay_sonradan_degistirilemez():
+    """Sozlesme alani kurulumdan sonra mutasyona kapali (dis inceleme P.1)."""
+    from dataclasses import FrozenInstanceError
+    n = len(ISK)
+    poz = Poz2B(iskelet=ISK, noktalar=np.zeros((n, 2)), guven=np.ones(n),
+                gorunur=np.ones(n, bool), tespit=True, goruntu_boyutu=(1280, 720))
+    with pytest.raises(FrozenInstanceError):
+        poz.uzay = "bozuk"
+    with pytest.raises(FrozenInstanceError):
+        poz.kare = 3
+
+
+def test_tespit_false_ile_gorunur_eklem_celiskili():
+    n = len(ISK)
+    with pytest.raises(ValueError, match="tespit=False"):
+        Poz2B(iskelet=ISK, noktalar=np.zeros((n, 2)), guven=np.ones(n),
+              gorunur=np.ones(n, bool), tespit=False, goruntu_boyutu=(1280, 720))
 
 
 def test_guven_esikleme_diziyi_kisaltmaz():
     """Nokta silinmez, maskelenir -- yoksa indeksler kayar."""
     n = len(ISK)
     poz = Poz2B(iskelet=ISK, noktalar=np.zeros((n, 2)),
-                guven=np.linspace(0, 1, n), gorunur=np.ones(n, bool),
+                guven=np.linspace(0, 1, n), gorunur=np.ones(n, bool), tespit=True,
                 goruntu_boyutu=(1280, 720))
     suzulmus = poz.guven_esikle(0.5)
     assert len(suzulmus.noktalar) == n
@@ -127,9 +147,21 @@ def test_gecersiz_boyut_reddedilir():
         letterbox_donusumu((0, 720), (640, 640))
 
 
-def test_sifir_olcekli_donusum_geri_alinmaz():
-    with pytest.raises(ValueError, match="olcek sifir"):
-        Donusum(olcek=0.0, ofset=np.zeros(2)).geri([[1.0, 2.0]])
+def test_sifir_olcekli_donusum_kurulamaz():
+    """olcek==0 artik kurulum aninda reddedilir; ileri() sessizce cokertmez."""
+    with pytest.raises(ValueError, match="olcek"):
+        Donusum(olcek=0.0, ofset=np.zeros(2))
+
+
+def test_yanlis_sekilli_ofset_reddedilir():
+    with pytest.raises(ValueError, match="ofset"):
+        Donusum(olcek=1.0, ofset=np.zeros(3))
+
+
+def test_dort_kanalli_nokta_sessizce_kabul_edilmez():
+    """reshape(-1, 2) (N, 4) girdiyi (2N, 2) yapip hata vermezdi."""
+    with pytest.raises(ValueError, match="son ekseni 2"):
+        BIRIM_DONUSUM.ileri(np.zeros((3, 4)))
 
 
 def test_model_uzayindaki_poz_ozgune_cevrilir():
@@ -137,7 +169,8 @@ def test_model_uzayindaki_poz_ozgune_cevrilir():
     d = letterbox_donusumu((1280, 720), (640, 640))
     ozgun = np.tile([640.0, 360.0], (n, 1))
     poz = Poz2B(iskelet=ISK, noktalar=d.ileri(ozgun), guven=np.ones(n),
-                gorunur=np.ones(n, bool), goruntu_boyutu=(1280, 720), uzay="model")
+                gorunur=np.ones(n, bool), tespit=True, goruntu_boyutu=(1280, 720),
+                uzay="model")
     cevrilmis = poz.ozgun_uzaya(d)
     assert cevrilmis.uzay == "ozgun"
     assert np.allclose(cevrilmis.noktalar, ozgun, atol=1e-9)
@@ -204,6 +237,7 @@ def test_farkli_iskeletli_kameralar_karismaz(duzenek):
             sira = [ISK.indeks(e) for e in ters.eklemler]
             poz = Poz2B(iskelet=ters, noktalar=poz.noktalar[sira],
                         guven=poz.guven[sira], gorunur=poz.gorunur[sira],
+                        tespit=poz.tespit,
                         goruntu_boyutu=poz.goruntu_boyutu, kamera=i)
         pozlar[i] = poz
     isk = iskelet_ucgenle(kalib, pozlar)
@@ -212,13 +246,90 @@ def test_farkli_iskeletli_kameralar_karismaz(duzenek):
     assert hata.max() < 1.0, "isim eslemesi yapilmazsa eklemler karisirdi"
 
 
+def test_kamera_arkasindaki_iskelet_gorunmez_sayilir():
+    """cv2.projectPoints negatif Z'li noktayi da izdusurur ve sonuc genelde
+    kadrajin ICINE duser (1 m arkadaki nokta tam merkeze gelir). Yalnizca kadraj
+    filtresi kullanilirsa cop veri 'goruldu' sayilir (dis inceleme P.2).
+    """
+    from calib.synthetic import Kamera
+    K = np.array([[900.0, 0.0, 640.0], [0.0, 900.0, 360.0], [0.0, 0.0, 1.0]])
+    arkasinda = Kamera(K=K, R=np.eye(3), t=np.array([[0.0], [0.0], [-1.4]]),
+                       boyut=(1280, 720))
+    poz = sentetik_poz(arkasinda, P3)
+    assert not poz.gorunur.any()
+    assert poz.tespit is False
+
+
+def test_kadraj_disindaki_iskelet_tespitsiz_ve_koordinatsizdir():
+    """Kamera onunde ama kadraj disinda: tespit yok, koordinat da yok.
+
+    Onceden `tespit=gorunur.any()` sonlu koordinatla birlesip Poz2B kurulurken
+    "tespit=False iken koordinat tasinamaz" hatasiyla cokuyordu.
+    """
+    from calib.synthetic import Kamera
+    K = np.array([[900.0, 0.0, 640.0], [0.0, 900.0, 360.0], [0.0, 0.0, 1.0]])
+    kam = Kamera(K=K, R=np.eye(3), t=np.array([[50.0], [0.0], [3.0]]), boyut=(1280, 720))
+    poz = sentetik_poz(kam, P3)
+    assert poz.tespit is False
+    assert np.isnan(poz.noktalar).all()
+
+
+def test_tamamen_ortulu_iskelet_tespitli_ama_gorunmezdir(duzenek):
+    """Kisi kadrajda ama her eklem ortulu: tespit var, gorunur eklem yok."""
+    _, kameralar = duzenek
+    poz = sentetik_poz(kameralar[0], P3, ortulu=REFERANS_ISKELET.eklemler)
+    assert poz.tespit is True
+    assert not poz.gorunur.any()
+
+
+def test_negatif_gurultu_reddedilir(duzenek):
+    _, kameralar = duzenek
+    with pytest.raises(ValueError, match="gurultu_px negatif"):
+        sentetik_poz(kameralar[0], P3, gurultu_px=-0.5)
+
+
 def test_sentetik_poz_eklem_sayisini_dogrular(duzenek):
     _, kameralar = duzenek
     with pytest.raises(ValueError, match="3B iskelet"):
         sentetik_poz(kameralar[0], P3[:5])
 
 
-def test_iskelet3b_uzunluk_dogrulamasi():
-    with pytest.raises(ValueError, match="uzunlugu"):
+def test_iskelet3b_sekil_dogrulamasi():
+    with pytest.raises(ValueError, match="bekleniyor"):
         Iskelet3B(tanim=ISK, noktalar=np.zeros((3, 3)), gorunur=np.ones(3, bool),
                   goren_kamera=np.zeros(3, int), artik_px=np.zeros(3))
+
+
+def test_iskelet3b_2b_dizi_3b_yerine_gecmez():
+    """len() kontrolu (N,2) diziyi kabul ediyordu: sessiz veri bozulmasi (I.1)."""
+    n = len(ISK)
+    with pytest.raises(ValueError, match=r"\(13, 3\) bekleniyor"):
+        Iskelet3B(tanim=ISK, noktalar=np.zeros((n, 2)), gorunur=np.ones(n, bool),
+                  goren_kamera=np.zeros(n, int), artik_px=np.zeros(n))
+
+
+def test_iskelet3b_gorunmez_eklem_deger_tasimaz():
+    n = len(ISK)
+    noktalar = np.zeros((n, 3))
+    gorunur = np.ones(n, bool)
+    gorunur[0] = False                 # NaN olmali, 0.0 degil
+    with pytest.raises(ValueError, match="NaN beklenir"):
+        Iskelet3B(tanim=ISK, noktalar=noktalar, gorunur=gorunur,
+                  goren_kamera=np.zeros(n, int), artik_px=np.zeros(n))
+
+
+def test_iskelet3b_gorunur_eklem_nan_olamaz():
+    n = len(ISK)
+    noktalar = np.zeros((n, 3))
+    noktalar[2] = np.nan
+    with pytest.raises(ValueError, match="sonlu olmayan"):
+        Iskelet3B(tanim=ISK, noktalar=noktalar, gorunur=np.ones(n, bool),
+                  goren_kamera=np.zeros(n, int), artik_px=np.zeros(n))
+
+
+def test_baglanti_kendine_ve_tekrarli_reddedilir():
+    with pytest.raises(ValueError, match="kendisine"):
+        IskeletTanimi("bozuk", ("diz", "ayak"), (("diz", "diz"),))
+    with pytest.raises(ValueError, match="tekrarli"):
+        IskeletTanimi("bozuk", ("diz", "ayak"),
+                      (("diz", "ayak"), ("ayak", "diz")))

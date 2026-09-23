@@ -42,6 +42,11 @@ class BoardSpec:
     dictionary: str = VARSAYILAN_SOZLUK
 
     def __post_init__(self) -> None:
+        # Pozitiflik once: square_mm=0, marker_mm=-5 onceden gecip goruntu
+        # uretiminde negatif piksel boyutuna donusuyordu (dis inceleme B.1.1).
+        for ad, deger in (("square_mm", self.square_mm), ("marker_mm", self.marker_mm)):
+            if not np.isfinite(deger) or deger <= 0:
+                raise ValueError(f"{ad} sonlu ve pozitif olmali, {deger} geldi")
         if self.marker_mm >= self.square_mm:
             raise ValueError("marker kenari kare kenarindan kucuk olmali")
         if min(self.squares_x, self.squares_y) < 3:
@@ -62,7 +67,10 @@ class BoardSpec:
 
 
 def sozluk_al(ad: str) -> cv2.aruco.Dictionary:
-    if not hasattr(cv2.aruco, ad):
+    # `hasattr` tek basina yetmez: "CharucoBoard" gibi bir sinif adi da gecerdi
+    # ve OpenCV'den anlasilmaz bir hata gelirdi (dis inceleme B.1.2).
+    if not (isinstance(ad, str) and ad.startswith("DICT_")
+            and isinstance(getattr(cv2.aruco, ad, None), int)):
         raise ValueError(f"bilinmeyen ArUco sozlugu: {ad}")
     return cv2.aruco.getPredefinedDictionary(getattr(cv2.aruco, ad))
 
@@ -80,12 +88,18 @@ def board_kur(spec: BoardSpec) -> cv2.aruco.CharucoBoard:
     )
 
 
+def _dpi_dogrula(dpi) -> None:
+    if type(dpi) is not int or dpi <= 0:
+        raise ValueError(f"dpi pozitif tamsayi olmali, {dpi!r} geldi")
+
+
 def goruntu_uret(spec: BoardSpec, dpi: int = 300) -> np.ndarray:
     """Board'u verilen dpi'da, tam fiziksel oranda gri tonlu goruntu olarak uret.
 
     marginSize=0 kullaniyoruz: kenar boslugu PDF yerlesiminde veriliyor, boylece
     goruntunun piksel/mm oranı tam olarak korunuyor.
     """
+    _dpi_dogrula(dpi)
     px_per_mm = dpi / 25.4
     genislik = int(round(spec.width_mm * px_per_mm))
     yukseklik = int(round(spec.height_mm * px_per_mm))
@@ -127,19 +141,26 @@ def pdf_yaz(spec: BoardSpec, cikti: Path, dpi: int = 300, kenar_mm: float = 12.0
         ha="center", va="center", fontsize=7, family="monospace",
     )
 
+    _dpi_dogrula(dpi)
+    if not np.isfinite(kenar_mm) or kenar_mm < 0:
+        raise ValueError(f"kenar_mm sonlu ve negatif olmayan olmali, {kenar_mm} geldi")
     cikti.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(cikti, format="pdf")
     plt.close(fig)
     sayfa_mm = (sayfa_g / mm_to_in, sayfa_y / mm_to_in)
 
     # Spec'i PDF'in yanina yaz: hangi board'la kalibre edildigi sonradan sorulacak.
+    # Atomik yazim (calib/io.py ile ayni disiplin): yarim kalan yan dosya,
+    # hangi board'la kalibre edildigi sorusuna yanlis cevap verir (B.1.3).
     yan = cikti.with_suffix(".json")
-    yan.write_text(json.dumps(
+    gecici = yan.with_name(yan.name + ".tmp")
+    gecici.write_text(json.dumps(
         {**asdict(spec),
          "sayfa_mm": [round(sayfa_mm[0], 1), round(sayfa_mm[1], 1)],
          "kagit": kagit_oner(*sayfa_mm),
          "dpi": dpi},
-        indent=2, ensure_ascii=False))
+        indent=2, ensure_ascii=False, allow_nan=False), encoding="utf-8")
+    gecici.replace(yan)
     return cikti
 
 

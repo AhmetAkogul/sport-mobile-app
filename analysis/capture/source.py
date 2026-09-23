@@ -2,6 +2,7 @@
 
 import math
 import multiprocessing as mp
+import pickle
 import queue
 import threading
 
@@ -17,8 +18,11 @@ def _worker(connection, source, factory):
         while True:
             command = connection.recv()
             if command == "close":
-                handle.release()
+                # Referans **once** dusurulur: release() hata verirse finally
+                # blogu ayni nesneyi ikinci kez kapatmaz (dis inceleme C.2.1).
+                local = handle
                 handle = None
+                local.release()
                 connection.send((True, None))
                 break
             if isinstance(command, tuple) and command[0] in {"get", "set"}:
@@ -61,6 +65,16 @@ class ProcessCapture:
         for value in (timeout_s, open_timeout_s):
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError("Zaman aşımı sonlu pozitif saniye olmalı.")
+        if factory is not None:
+            # spawn factory'yi pickle eder; lambda gibi pickle edilemeyen bir
+            # nesne .start() icinde anlasilmaz bir hataya donusur. Hata erken
+            # verilsin (dis inceleme C.2.2).
+            try:
+                pickle.dumps(factory)
+            except Exception as exc:
+                raise ValueError(
+                    "factory modul seviyesinde ve pickle edilebilir olmali "
+                    f"(lambda sozlesme disi): {type(exc).__name__}: {exc}") from exc
         self.timeout_s = timeout_s
         self._closed = False
         self._opened = False

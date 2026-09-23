@@ -37,6 +37,14 @@ class IskeletTanimi:
         bilinmeyen = {e for cift in self.baglantilar for e in cift} - set(self.eklemler)
         if bilinmeyen:
             raise ValueError(f"baglantida bilinmeyen eklem: {sorted(bilinmeyen)}")
+        gorulen: set[frozenset[str]] = set()
+        for a, b in self.baglantilar:
+            if a == b:
+                raise ValueError(f"baglanti eklemin kendisine olamaz: {a}")
+            anahtar = frozenset((a, b))
+            if anahtar in gorulen:
+                raise ValueError(f"baglanti tekrarli: {a}-{b}")
+            gorulen.add(anahtar)
 
     def __len__(self) -> int:
         return len(self.eklemler)
@@ -72,20 +80,51 @@ REFERANS_ISKELET = IskeletTanimi(
 
 @dataclass
 class Iskelet3B:
-    """3B eklem konumlari. Gorulemeyen eklem NaN ve `gorunur=False`."""
+    """3B eklem konumlari. Gorulemeyen eklem NaN ve `gorunur=False`.
+
+    Iki alan farkli sorulari cevaplar ve karistirilmamalidir:
+
+    - `goren_kamera[j]` -- `j` eklemini kac kamera **gordu** (triangulation
+      denenmeden once). Ucgenleme sonradan basarisiz olabilir (kotu kosullanma),
+      o zaman goren yuksek ama `gorunur[j]=False` olur.
+    - `gorunur[j]` -- `j` eklemi icin **guvenilir** bir 3B nokta uretildi mi.
+    """
 
     tanim: IskeletTanimi
     noktalar: np.ndarray          # (N, 3) metre, kamera 0 koordinatinda
     gorunur: np.ndarray           # (N,) bool
     goren_kamera: np.ndarray      # (N,) int -- eklem basina kac kamera gordu
     artik_px: np.ndarray          # (N,) yeniden izdusum artigi
+    ek: dict = field(default_factory=dict)   # hat/uretici kaynakli ek bilgi
 
     def __post_init__(self) -> None:
         n = len(self.tanim)
-        for ad, dizi in (("noktalar", self.noktalar), ("gorunur", self.gorunur),
-                         ("goren_kamera", self.goren_kamera), ("artik_px", self.artik_px)):
-            if len(dizi) != n:
-                raise ValueError(f"{ad} uzunlugu {len(dizi)}, iskelet {n} eklem bekliyor")
+        noktalar = np.asarray(self.noktalar, dtype=np.float64)
+        if noktalar.shape != (n, 3):
+            raise ValueError(
+                f"noktalar {noktalar.shape}, ({n}, 3) bekleniyor -- 2B bir dizi "
+                "3B iskelet yerine gecmez")
+        gorunur = np.asarray(self.gorunur)
+        if gorunur.shape != (n,) or gorunur.dtype != bool:
+            raise ValueError(
+                f"gorunur {gorunur.shape}/{gorunur.dtype}, ({n},) bool bekleniyor")
+        for ad, dizi in (("goren_kamera", self.goren_kamera), ("artik_px", self.artik_px)):
+            if np.asarray(dizi).shape != (n,):
+                raise ValueError(f"{ad} {np.asarray(dizi).shape}, ({n},) bekleniyor")
+        sonlu = np.isfinite(noktalar).all(axis=1)
+        eksik = gorunur & ~sonlu
+        if eksik.any():
+            raise ValueError(
+                "gorunur ama sonlu olmayan eklem: "
+                f"{[self.tanim.eklemler[i] for i in np.flatnonzero(eksik)]}")
+        if not isinstance(self.ek, dict):
+            raise ValueError(f"ek sozluk olmali, {type(self.ek).__name__} geldi")
+        fazla = ~gorunur & sonlu
+        if fazla.any():
+            raise ValueError(
+                "gorunmez eklem deger tasiyor (NaN beklenir): "
+                f"{[self.tanim.eklemler[i] for i in np.flatnonzero(fazla)]}")
+        object.__setattr__(self, "noktalar", noktalar)
 
     def al(self, eklem: str) -> np.ndarray:
         return self.noktalar[self.tanim.indeks(eklem)]
@@ -113,11 +152,13 @@ def eslestir(
     siralama yapilir; -1 olan eklemler **eksik** sayilir, uydurulmaz.
     """
     esleme = esleme or {}
+    # {isim: indeks} bir kez kurulur: `eklemler.index()` her eklem icin O(n) tarama.
+    kaynak_indeks = {ad: i for i, ad in enumerate(kaynak.eklemler)}
     cikti = np.full(len(hedef), -1, dtype=int)
     for i, ad in enumerate(hedef.eklemler):
         kaynak_ad = esleme.get(ad, ad)
-        if kaynak_ad in kaynak.eklemler:
-            cikti[i] = kaynak.eklemler.index(kaynak_ad)
+        if kaynak_ad in kaynak_indeks:
+            cikti[i] = kaynak_indeks[kaynak_ad]
     return cikti
 
 
@@ -134,6 +175,11 @@ def iskelet_ucgenle(
     o eklemi goren kameralardan ucgenlenir; bir kamera bir eklemi ortulme
     yuzunden gormuyorsa digerleri isi surdurur. Iki gorusun altina dusen eklem
     uydurulmaz, gorunmez isaretlenir.
+
+    `ucgenle`'nin `ValueError`'u **yutulmaz**: buraya gelmeden once en az iki
+    gorus sarti zaten denetlendi, dolayisiyla oradan gelen hata artik "bu eklem
+    olculemedi" degil, gercek bir sozlesme/kalibrasyon sorunudur ve sessizce
+    yutulursa kaynagi gizlenir (dis inceleme I.2).
     """
     n = len(tanim)
     noktalar = np.full((n, 3), np.nan)
@@ -156,10 +202,7 @@ def iskelet_ucgenle(
         goren[j] = len(eklem_gozlem)
         if len(eklem_gozlem) < max(2, min_gorus):
             continue
-        try:
-            sonuc: Ucgenleme = ucgenle(kalib, eklem_gozlem, bozulma_giderildi)
-        except ValueError:
-            continue
+        sonuc: Ucgenleme = ucgenle(kalib, eklem_gozlem, bozulma_giderildi)
         if not sonuc.gecerli:
             continue
         noktalar[j] = sonuc.nokta

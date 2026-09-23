@@ -63,6 +63,10 @@ def _dlt(projeksiyonlar: list[np.ndarray], noktalar: np.ndarray) -> np.ndarray:
     normlar[normlar == 0] = 1.0
     _, _, Vt = np.linalg.svd(A / normlar)
     X = Vt[-1]
+    # SVD'nin sag tekil vektoru birim normludur (|X| = 1), dolayisiyla X[3]
+    # sonlu bir nokta icin O(1) buyukluktedir ve esik birimden bagimsizdir
+    # (dis inceleme T.2). 1e-12 yalnizca gercekten sonsuzdaki (paralel isin)
+    # durumu yakalar; kotu kosullanma ayrica `gecerli` ile elenir.
     if abs(X[3]) < 1e-12:                      # sonsuzdaki nokta -- kesisme yok
         return np.full(3, np.nan)
     return X[:3] / X[3]
@@ -75,25 +79,120 @@ class Ucgenleme:
     nokta: np.ndarray            # (3,) kamera 0 koordinatinda, metre
     goren_kamera: int
     artik_px: float              # ortalama yeniden izdusum artigi
+    kovaryans: np.ndarray | None = None   # (3,3) m^2; `sigma_px` verilirse dolar
+
+    def __post_init__(self) -> None:
+        """Sekil denetimi ve sonsuz artigin NaN'a cevrilmesi (T.3, T.6).
+
+        `artik_px` sonsuz olabiliyordu: kamera duzlemine dusen bir nokta icin
+        inf ekleniyor ve ortalamayi da inf yapiyordu. inf bir sayi gibi esikle
+        karsilastirilinca "cok kotu olcum" diye okunur; dogrusu "hesaplanamadi",
+        yani NaN.
+        """
+        self.nokta = np.asarray(self.nokta, dtype=np.float64).reshape(-1)
+        if self.nokta.shape != (3,):
+            raise ValueError(f"nokta (3,) olmali, {self.nokta.shape} geldi")
+        if not np.isfinite(self.artik_px):
+            self.artik_px = float("nan")
+        if self.kovaryans is not None:
+            k = np.asarray(self.kovaryans, dtype=np.float64)
+            if k.shape != (3, 3):
+                raise ValueError(f"kovaryans (3,3) olmali, {k.shape} geldi")
+            self.kovaryans = k
 
     @property
     def gecerli(self) -> bool:
         return bool(np.isfinite(self.nokta).all())
+
+    @property
+    def sigma_m(self) -> float:
+        """Kovaryansin izotropik karsiligi: sqrt(iz/3), metre.
+
+        Ucgenleme hatasi **anizotropiktir** -- derinlik yonu yanal yonlerden
+        belirgin sekilde kotudur. Tek skalara indirgemek o bilgiyi atar; buradaki
+        secim, ayni toplam varyansi tasiyan izotropik dagilimin sigmasidir
+        (3*sigma^2 = iz). Yone duyarli hesap gerekiyorsa `kovaryans` kullanilmali.
+        """
+        if self.kovaryans is None:
+            return float("nan")
+        return float(np.sqrt(np.trace(self.kovaryans) / 3.0))
+
+
+def _izdusum_jacobiani(P: np.ndarray, X: np.ndarray) -> np.ndarray | None:
+    """Piksel izdusumunun 3B noktaya gore turevi, (2,3).
+
+    p = (P*Xh)[:2] / (P*Xh)[2] oldugundan bolum kuralindan:
+        dp/dX = (P[:2,:3] - p * P[2,:3]) / w2
+    Kamera arkasinda kalan ya da bolenin sifira gittigi nokta icin None.
+    """
+    w = P @ np.append(np.asarray(X, float), 1.0)
+    if abs(w[2]) < 1e-12:
+        return None
+    p = w[:2] / w[2]
+    return (P[:2, :3] - np.outer(p, P[2, :3])) / w[2]
+
+
+def nokta_kovaryansi(
+    projeksiyonlar: list[np.ndarray], X: np.ndarray, sigma_px: float
+) -> np.ndarray | None:
+    """Birinci derece kovaryans kestirimi: Cov = sigma_px^2 * (J^T J)^-1.
+
+    Gozlem gurultusu kameralar arasi bagimsiz ve her eksende `sigma_px` kabul
+    edilir. Bu, tespit gurultusunun **bilindigi** varsayimidir; artiklardan
+    kestirmek iki goruste 1 serbestlik derecesi biraktigi icin guvenilmez, o
+    yuzden disaridan verilir.
+
+    Birim (dis inceleme T.4): `sigma_px`, `projeksiyonlar`'in olculdugu goruntu
+    uzayinda piksel cinsindendir. Projeksiyonlar K iceriyor (P = K[R|t]) ve
+    bozulma giderilmis piksel koordinatlariyla calisir; disaridan undistort
+    edilmis nokta verilirse gurultu de **o** uzayda ifade edilmelidir (bozulma
+    kucuk oldugu surece fark ihmal edilebilir, buyuk bozulmada sigma kenarlarda
+    buyur).
+
+    Geometri kotu kosullandiginda (kameralar neredeyse ayni dogrultuda, nokta
+    taban cizgisi uzerinde) J^T J tekillesir ve None doner -- buyuk ama uydurma
+    bir sayi uretmek yerine "bilinmiyor" demek dogrusu.
+    """
+    if sigma_px <= 0:
+        raise ValueError("sigma_px pozitif olmali")
+    bloklar = []
+    for P in projeksiyonlar:
+        J = _izdusum_jacobiani(P, X)
+        if J is None:
+            return None
+        bloklar.append(J)
+    if len(bloklar) < 2:
+        return None
+    J = np.vstack(bloklar)
+    N = J.T @ J
+    if not np.isfinite(N).all() or np.linalg.cond(N) > 1e12:
+        return None
+    return float(sigma_px) ** 2 * np.linalg.inv(N)
 
 
 def ucgenle(
     kalib: Kalibrasyon,
     gozlemler: dict[int, np.ndarray],
     bozulma_giderildi: bool = False,
+    sigma_px: float | None = None,
 ) -> Ucgenleme:
     """Bir 3B noktayi, onu goren kameralarin 2B gozlemlerinden kestir.
 
     `gozlemler`: {kamera_indeksi: (2,) piksel}. En az iki kamera gerekir --
     tek kameradan derinlik cikmaz, bu projenin tum tezi de zaten bu.
+
+    `sigma_px` verilirse sonuca (3,3) kovaryans eklenir. Varsayilan None:
+    hesaplanmaz ve `kovaryans` bos kalir -- eski cagiranlar etkilenmez.
     """
     if len(gozlemler) < 2:
         raise ValueError(
             f"triangulation icin en az 2 gorus gerekli, {len(gozlemler)} verildi")
+    # Sinir kontrolu basta: aksi halde `kalib.Ks[i]` IndexError firlatir ve
+    # `iskelet_ucgenle`'nin ValueError suzgeci onu yakalamaz -- hat coker (T.1).
+    n_kamera = len(kalib.Ks)
+    if any(not 0 <= i < n_kamera for i in gozlemler):
+        raise ValueError(
+            f"kamera indeksi gecersiz: {sorted(gozlemler)}, {n_kamera} kamera var")
 
     indeksler = sorted(gozlemler)
     P_hepsi = kalibrasyondan_projeksiyonlar(kalib)
@@ -119,8 +218,9 @@ def ucgenle(
             artiklar.append(np.inf)
             continue
         artiklar.append(float(np.linalg.norm(izd[:2] / izd[2] - p)))
+    kov = None if sigma_px is None else nokta_kovaryansi(Ps, X, sigma_px)
     return Ucgenleme(nokta=X, goren_kamera=len(indeksler),
-                     artik_px=float(np.mean(artiklar)))
+                     artik_px=float(np.mean(artiklar)), kovaryans=kov)
 
 
 def ucgenle_toplu(

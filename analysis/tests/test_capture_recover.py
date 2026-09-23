@@ -123,3 +123,12 @@ def test_cli_recovers_and_produces_readable_output(crashed, tmp_path):
     ], capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)["completed_batches"] == 2
     assert len(list(iter_batches(target))) == 2
+
+
+def test_symlink_hatasi_kurtarma_baglamiyla_raporlanir(crashed, tmp_path):
+    """Dis inceleme C.5.1: okuyucunun hatasi 'kurtarma' baglamiyla gelir."""
+    path = crashed / "batches/000001/a.png"
+    path.unlink()
+    path.symlink_to(crashed / "batches/000000/a.png")
+    with pytest.raises(ValueError, match="Kurtarma"):
+        recover_session(crashed, tmp_path / "recovered")

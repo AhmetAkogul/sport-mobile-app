@@ -4,7 +4,6 @@ KOD-PLANI.md Adim 2: "gurultu seviyesi <-> parametre varyansi egrisi".
 Kabul olcutu monotonluk: gurultu artarsa sacilim artmali. Sureç rastgele oldugu
 icin esikler genis, tohumlar sabit -- test kirilgan olmamali.
 """
-import numpy as np
 import pytest
 
 from calib.board import BoardSpec

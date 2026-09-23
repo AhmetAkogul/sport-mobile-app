@@ -106,8 +106,38 @@ def test_ciktinin_sozlesmesi_dogru():
     assert len(poz.noktalar) == len(ISK)
     assert poz.uzay == "ozgun"
     assert poz.kamera == 2 and poz.kare == 7
-    assert "mediapipe" in poz.model
+    # Model adi varsayilan olarak uydurulmaz: cagiran gercek kimligi gecirir (A.7).
+    assert poz.model == "bilinmiyor"
+    assert poz.tespit is True
     assert poz.ek["kaynak_iskelet"] == "mediapipe-33"
+
+
+def test_nan_koordinat_sifira_cevrilmez():
+    """Eksik nokta NaN kalir: 0.0 gecerli bir piksel koordinatidir (A.1/X.4)."""
+    poz = mediapipe_poz2b(sahte_sonuc(RIGHT_KNEE={"x": float("nan"), "y": float("nan")}), BOYUT)
+    j = ISK.indeks("sag_diz")
+    assert np.isnan(poz.noktalar[j]).all()
+    assert not poz.gorunur[j]
+    assert poz.gorunur[ISK.indeks("sag_kalca")]
+
+
+def test_nan_guven_sifir_sayilir():
+    """`getattr(...) or 0.0` NaN'i temizlemez: NaN truthy'dir (A.2)."""
+    poz = mediapipe_poz2b(sahte_sonuc(RIGHT_KNEE={"visibility": float("nan")}), BOYUT)
+    j = ISK.indeks("sag_diz")
+    assert poz.guven[j] == 0.0
+    assert not poz.gorunur[j]
+
+
+def test_alan_sayisi_gecersizse_hata():
+    from pose3d.adaptorler import _mp_dizileri
+    with pytest.raises(ValueError, match="alan_sayisi"):
+        _mp_dizileri(sahte_sonuc(), 4)
+
+
+def test_verilen_model_kimligi_tasinir():
+    poz = mediapipe_poz2b(sahte_sonuc(), BOYUT, model="mediapipe-0.10.35/pose_landmarker_full")
+    assert poz.model == "mediapipe-0.10.35/pose_landmarker_full"
 
 
 def test_gecersiz_goruntu_boyutu_reddedilir():
@@ -118,14 +148,16 @@ def test_gecersiz_goruntu_boyutu_reddedilir():
 def test_dunya_noktalari_uc_boyutlu():
     """world_landmarks telefonun kendi 3B kestirimi -- tezin olctugu sey."""
     lm = sahte_sonuc(RIGHT_KNEE={"x": 0.1, "y": -0.4, "z": 0.05})
-    noktalar, gorunur = mediapipe_dunya_noktalari(lm)
+    noktalar, guven, gorunur = mediapipe_dunya_noktalari(lm)
     assert noktalar.shape == (len(ISK), 3)
     assert noktalar[ISK.indeks("sag_diz")] == pytest.approx([0.1, -0.4, 0.05])
     assert gorunur.all()
+    # Guven de doner: duzeltme katmani ham guveni isteyecek (A.5).
+    assert guven.shape == (len(ISK),) and (guven > 0).all()
 
 
 def test_dunya_noktalarinda_boyun_da_turetilir():
     lm = sahte_sonuc(LEFT_SHOULDER={"x": 0.0, "y": 0.5, "z": 0.0},
                      RIGHT_SHOULDER={"x": 0.4, "y": 0.5, "z": 0.2})
-    noktalar, _ = mediapipe_dunya_noktalari(lm)
+    noktalar, _, _ = mediapipe_dunya_noktalari(lm)
     assert noktalar[ISK.indeks("boyun")] == pytest.approx([0.2, 0.5, 0.1])

@@ -14,7 +14,7 @@ def test_missing_pose_is_explicitly_invisible():
     pose = result_to_pose(SimpleNamespace(pose_landmarks=[]), (640, 480), model="test")
     assert pose.noktalar.shape == (13, 2)
     assert not pose.gorunur.any()
-    assert not pose.ek['tespit']
+    assert pose.tespit is False      # tespit artik sozlesme alani (X.1)
 
 
 def test_real_adapter_preserves_pixel_space_and_model():

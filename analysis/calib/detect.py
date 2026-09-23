@@ -61,6 +61,10 @@ def kose_bul(
     min_kose: int = VARSAYILAN_MIN_KOSE,
 ) -> Tespit | None:
     """Karede board kosesi ara. Esigi gecmezse None -- "gormedi" demektir."""
+    # Poz icin en az 4 kose (homografi) gerekir; 0 ya da negatif esik her
+    # tespiti gecirirdi (dis inceleme B.2.1).
+    if type(min_kose) is not int or min_kose < 4:
+        raise ValueError(f"min_kose en az 4 olan tamsayi olmali, {min_kose!r} geldi")
     if goruntu.ndim == 3:
         goruntu = cv2.cvtColor(goruntu, cv2.COLOR_BGR2GRAY)
     koseler, idler, _, marker_idler = dedektor.detectBoard(goruntu)
@@ -96,6 +100,10 @@ def hazirla(
 
     n_kamera = len(tespitler)
     n_kare = kare_sayilari.pop()
+    if n_kare == 0:
+        # Bos sahne tum denetimlerden tutarli gecip OpenCV'de anlasilmaz bir
+        # hataya donusuyordu (dis inceleme B.2.3).
+        raise ValueError("hic kare yok: kalibrasyon icin en az bir kare gerekli")
     model = board_kur(spec).getChessboardCorners()  # (K, 3) float32, metre
 
     # OpenCV detectionMask: (kamera x kare), CV_8UC1. 1 = o kamera o karede gordu.

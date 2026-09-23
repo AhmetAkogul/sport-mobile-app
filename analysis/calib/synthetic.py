@@ -36,6 +36,20 @@ class Kamera:
     t: np.ndarray            # (3,1)
     boyut: tuple[int, int]   # (genislik, yukseklik) piksel
 
+    def __post_init__(self) -> None:
+        # Dis inceleme B.5.3: yer gercegi kamerasi bozuksa butun sentetik
+        # deney sessizce yanlis olur; kurulumda durulur.
+        K, R = np.asarray(self.K, float), np.asarray(self.R, float)
+        if K.shape != (3, 3) or not np.isfinite(K).all() or K[0, 0] <= 0 or K[1, 1] <= 0:
+            raise ValueError(f"K (3,3), sonlu ve pozitif odakli olmali, {K.shape} geldi")
+        if R.shape != (3, 3) or not np.allclose(R @ R.T, np.eye(3), atol=1e-6) \
+                or np.linalg.det(R) < 0:
+            raise ValueError("R bir donme matrisi olmali (dik, det=+1)")
+        if np.asarray(self.t, float).size != 3 or not np.isfinite(self.t).all():
+            raise ValueError("t 3 elemanli ve sonlu olmali")
+        if len(self.boyut) != 2 or min(self.boyut) <= 0:
+            raise ValueError(f"boyut (genislik, yukseklik) pozitif olmali, {self.boyut} geldi")
+
     @property
     def merkez(self) -> np.ndarray:
         """Kameranin dunya koordinatindaki konumu."""
@@ -145,6 +159,11 @@ def sahne_uret(
     Kadraj disina tasan kare o kamera icin "gormedi" sayilir ve maskte 0 olur --
     gercek bir oturumdaki kismi gorunurlugu taklit eder.
     """
+    # Dis inceleme B.5.2: bos sahne ve negatif gurultu reddedilir.
+    if type(n_kare) is not int or n_kare < 1:
+        raise ValueError(f"n_kare pozitif tamsayi olmali, {n_kare!r} geldi")
+    if not np.isfinite(gurultu_px) or gurultu_px < 0:
+        raise ValueError(f"gurultu_px sonlu ve negatif olmayan olmali, {gurultu_px} geldi")
     kameralar = kameralar or rig_yay()
     dag = POZ_DAGILIMLARI[dagilim] if isinstance(dagilim, str) else dagilim
     model = board_kur(spec).getChessboardCorners().astype(np.float64)
@@ -159,13 +178,19 @@ def sahne_uret(
         for ci, kam in enumerate(kameralar):
             R = kam.R @ Rb
             t = kam.R @ tb + kam.t
+            # Kamera uzayindaki derinlik: yalnizca onde kalan noktalar gorulur.
+            # `cv2.projectPoints` arkadaki noktalari da izdusurur ve sonuc cogu
+            # zaman kadrajin **icine** duser (1 m arkadaki nokta tam merkeze).
+            # Yalnizca kadraj bakan bir suzgec bunlari "gorulmus" sayar ve
+            # sentetik veriye sessizce cop girer. Dis inceleme B.5.1.
+            z_cam = (model @ R.T + t.reshape(3))[:, 2]
             p, _ = cv2.projectPoints(model, cv2.Rodrigues(R)[0], t, kam.K, None)
             p = p.reshape(-1, 2)
             if gurultu_px:
                 p = p + rng.normal(0.0, gurultu_px, p.shape)
             g, y = kam.boyut
             icinde = (p[:, 0] >= 0) & (p[:, 0] < g) & (p[:, 1] >= 0) & (p[:, 1] < y)
-            if icinde.all():
+            if icinde.all() and (z_cam > 0).all():
                 img_noktalari[ci].append(p.reshape(-1, 1, 2).astype(np.float32))
                 mask[ci, kare] = 1
             else:
@@ -220,13 +245,21 @@ def nokta_gozlemleri(
     gurultu_px: float = 0.0,
     seed: int = 0,
 ) -> list[dict[int, np.ndarray]]:
-    """Her 3B noktayi her kameraya izdusur. Kadraj disi kalan kamera sozlukte yok."""
+    """Her 3B noktayi her kameraya izdusur.
+
+    Kadraj disi kalan **ve kamera arkasinda kalan** kamera sozlukte yok.
+    Ikincisi sessiz bir tuzakti: arkadaki nokta da izdusurulur ve genelde
+    kadrajin icine duser (bkz. B.5.1).
+    """
     rng = np.random.default_rng(seed + 31337)
     n = np.asarray(noktalar, dtype=np.float64).reshape(-1, 3)
     cikti: list[dict[int, np.ndarray]] = []
     for X in n:
         gozlem: dict[int, np.ndarray] = {}
         for ci, kam in enumerate(kameralar):
+            # Kamera arkasindaki nokta kadraja dusse bile gorulmez (B.5.1).
+            if float((kam.R @ X + kam.t.reshape(3))[2]) <= 0.0:
+                continue
             p, _ = cv2.projectPoints(X.reshape(1, 3), cv2.Rodrigues(kam.R)[0],
                                      kam.t, kam.K, None)
             p = p.reshape(2)

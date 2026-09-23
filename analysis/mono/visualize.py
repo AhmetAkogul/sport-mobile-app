@@ -24,25 +24,51 @@ def validate_row(row, index, size, model):
     n = len(SKELETON)
     if (points.shape != (n, 2) or confidence.shape != (n,)
             or visible.shape != (n,) or visible.dtype != np.bool_
-            or not np.isfinite(points).all() or not np.isfinite(confidence).all()
+            or not np.isfinite(confidence).all()
             or np.any((confidence < 0) | (confidence > 1))):
         raise ValueError('Geçersiz poz dizileri.')
+    # Eksik veri politikası: görünen eklem sonlu olmalı. Eşik altı eklem maskelenir
+    # ama koordinatını korur (Poz2B: "nokta silinmez, maskelenir"); yalnızca hiç
+    # tespit yoksa koordinat da yoktur (null/NaN).
+    if not np.isfinite(points[visible]).all():
+        raise ValueError('Görünen eklem sonlu olmayan koordinat taşıyor.')
+    if row.get('tespit') is False and np.isfinite(points).any():
+        raise ValueError('Tespit yokken koordinat taşınamaz.')
     return points, confidence, visible
+
+
+# EdgeAnnotator'un bağlantı indeks tabanı sürüme bağlıdır ve **sessiz** bir hata
+# üretir: yanlış taban seçilirse iskelet kaymış çizilir (sağ omuz yerine burun
+# bağlanır), hata vermez. Bu yüzden taban doğrulanmamış bir sürümde çalışmak
+# yerine açıkça durulur (dış inceleme W.1, docs/kararlar/0032).
+DOGRULANMIS_SUPERVISION = {"0.30.5"}
+BAGLANTI_INDEKS_TABANI = 1      # doğrulanmış sürümlerde gözlenen taban
 
 
 class PoseRenderer:
     def __init__(self):
         import supervision as sv
+        if sv.__version__ not in DOGRULANMIS_SUPERVISION:
+            raise RuntimeError(
+                f"Supervision {sv.__version__} ile bağlantı indeks tabanı "
+                f"doğrulanmadı (doğrulanmış: {sorted(DOGRULANMIS_SUPERVISION)}). "
+                "Yeni sürümde EdgeAnnotator'un 0 mı 1 mi tabanlı olduğunu bir "
+                "önizleme görüntüsüyle doğrulayıp bu listeye ekleyin.")
         self.sv = sv
         color = sv.Color.from_hex('#00D5FF')
-        # Supervision bağlantı indeksleri 1 tabanlıdır.
-        edges = [(SKELETON.indeks(a) + 1, SKELETON.indeks(b) + 1)
+        edges = [(SKELETON.indeks(a) + BAGLANTI_INDEKS_TABANI,
+                  SKELETON.indeks(b) + BAGLANTI_INDEKS_TABANI)
                  for a, b in SKELETON.baglantilar]
         self.edges = sv.EdgeAnnotator(color=color, thickness=2, edges=edges)
         self.vertices = sv.VertexAnnotator(color=color, radius=4)
 
     def draw(self, image, arrays):
         points, confidence, visible = arrays
+        # Supervision'in belgelenmis "eksik nokta" isareti (0, 0)'dir. 0.30.5 NaN'i
+        # da atliyor (23 Eylul'de denendi, cizim piksel piksel ayni) ama bu
+        # belgelenmis davranis degil; yeni surumde degisirse sessizce bozulmasin.
+        # Donusum yalnizca cizim icindir, veri NaN kalir.
+        points = np.where(visible[:, None] & np.isfinite(points), points, 0.0)
         keypoints = self.sv.KeyPoints(xy=points.astype(np.float32)[None],
             keypoint_confidence=confidence.astype(np.float32)[None], visible=visible[None])
         scene = self.edges.annotate(image.copy(), keypoints)
@@ -64,15 +90,19 @@ def render_video(video_path, poses_dir, output_dir):
     report = dict(status='running', input=str(video), input_sha256=digest,
                   poses_sha256=file_sha256(poses / 'poses.jsonl'), frames=0,
                   model=summary['model'], supervision_version=renderer.sv.__version__,
+                  edge_index_base=BAGLANTI_INDEKS_TABANI,
                   timing='constant_fps_preview', audio=False, physical_validation=False,
                   source_stop_reason=summary.get('stop_reason'))
     cap = writer = None
     _write_json(output / 'summary.json', report)
     try:
         cap = cv2.VideoCapture(str(video))
+        # Önce açıldı mı: açılmayan kaynaktan okunan FPS anlamsızdır.
+        if not cap.isOpened():
+            raise ValueError('Video açılamadı.')
         fps = cap.get(cv2.CAP_PROP_FPS)
-        if not cap.isOpened() or not np.isfinite(fps) or fps <= 0:
-            raise ValueError('Video veya FPS geçersiz.')
+        if not np.isfinite(fps) or fps <= 0:
+            raise ValueError('Video FPS geçersiz.')
         report['fps'] = fps
         with (poses / 'poses.jsonl').open() as rows:
             for index in range(count):
@@ -97,7 +127,7 @@ def render_video(video_path, poses_dir, output_dir):
             if rows.readline():
                 raise ValueError('Özette belirtilenden fazla poz satırı var.')
         writer.release()
-        writer = None
+        writer = None          # finally'de ikinci kez release edilmesin
         check = cv2.VideoCapture(str(output / 'overlay.avi'))
         decoded = 0
         try:

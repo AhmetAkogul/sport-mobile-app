@@ -103,3 +103,37 @@ def test_gecersiz_adim_reddedilir(duzenek):
     kalib, kameralar = duzenek
     with pytest.raises(ValueError, match="adim pozitif"):
         hacim_haritasi(kalib, kameralar, adim_m=0.0)
+
+
+def test_genis_izgara_tohum_cakismasi_reddedilir(duzenek):
+    """Dis inceleme H.3: 1000+ hucre genisliginde iki hucre ayni tohumu alirdi."""
+    kalib, kameralar = duzenek
+    with pytest.raises(ValueError, match="tohumlari cakisir"):
+        hacim_haritasi(kalib, kameralar, adim_m=0.001, x_araligi=(-0.5, 0.5),
+                       z_araligi=(0.0, 0.0))
+
+
+def test_kismen_olculen_hucre_olculmus_sayilmaz(duzenek, monkeypatch):
+    """Dis inceleme H.1: uc prob yonunden biri bile olculemezse hucre NaN."""
+    import eval.hacim as hacim
+
+    gercek = hacim.nokta_gozlemleri
+    sayac = {"n": 0}
+
+    def ucuncu_yonu_gizle(kameralar, uclar, **k):
+        sayac["n"] += 1
+        g = gercek(kameralar, uclar, **k)
+        return [dict(), dict()] if sayac["n"] % 3 == 0 else g
+
+    monkeypatch.setattr(hacim, "nokta_gozlemleri", ucuncu_yonu_gizle)
+    kalib, kameralar = duzenek
+    h = hacim_haritasi(kalib, kameralar, adim_m=1.0, x_araligi=(0.0, 0.0),
+                       z_araligi=(0.0, 0.0), gurultu_px=0.0, seed=1)
+    assert np.isnan(h.hata_mm).all()
+
+
+def test_azalan_aralik_reddedilir(duzenek):
+    """Dis inceleme H.4: azalan aralik sessizce bos izgara uretirdi."""
+    kalib, kameralar = duzenek
+    with pytest.raises(ValueError, match="artan"):
+        hacim_haritasi(kalib, kameralar, x_araligi=(1.0, -1.0))

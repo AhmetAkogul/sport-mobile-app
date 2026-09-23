@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import numpy as np
 
 from eval.aci_taramasi import aci_taramasi, kemik_onculeri, sentetik_poz_ureteci
-from eval.form import sentetik_durus
+from eval.form import Karar, form_degerlendir, sentetik_durus
 from mono.phone import tek_gorus_3b
 from pose3d.hizalama import rijit_hizala
 
@@ -71,6 +71,26 @@ def sekil_hatasi(duruslar: list, aci: float) -> float:
                 rijit_hizala(kestirim.noktalar[maske], d.noktalar[maske]).rms_mm
             )
     return float(np.mean(artiklar)) / 1000.0 if artiklar else float("nan")
+
+
+def eksen_hatalari(duruslar: list, aci: float) -> np.ndarray:
+    """Telefonun kendi hatasi, **kamera ekseni basina** (sx, sy, sz; metre).
+
+    Yer gercegi iskelet kestirime rijit hizalanir (kestirim telefon kamerasi
+    cercevesinde oldugu icin artiklar da o cercevede kalir), sonra eksen basina
+    RMS alinir. Tek gorus hatasinin derinlikte (Z) yogunlastigini sayisal
+    gosterir; kovaryansli kahin kolunun girdisidir.
+    """
+    uret, K = sentetik_poz_ureteci(gurultu_px=GURULTU_PX, seed=TOHUM)
+    artiklar = []
+    for d in duruslar:
+        kestirim = tek_gorus_3b(uret(aci, d), K, kemik_onculeri(d))
+        maske = kestirim.gorunur & d.gorunur
+        if int(maske.sum()) >= 4:
+            h = rijit_hizala(d.noktalar[maske], kestirim.noktalar[maske])
+            artiklar.append(kestirim.noktalar[maske] - h.uygula(d.noktalar[maske]))
+    a = np.concatenate(artiklar)
+    return np.sqrt(np.mean(a ** 2, axis=0))
 
 
 def cizim(satirlar: list[dict], hedef: Path) -> None:
@@ -126,6 +146,14 @@ def main() -> None:
         bilen = aci_taramasi(duruslar, [aci], uret2, K2,
                              konum_belirsizligi_m=sigma_m)
         b = bilen.noktalar[0].sayimlar[VALGUS]
+        # Kol 3: ayni kahin, ama belirsizlik eksen basina (kovaryans). Izotrop
+        # sigma derinlikteki hatayi goruntu duzlemine de yayar; bu kol "0,000
+        # karar" sonucunun izotrop varsayimdan ne kadar kaynaklandigini olcer.
+        eksen = eksen_hatalari(duruslar, aci)
+        kov = np.tile(np.diag(eksen ** 2), (len(duruslar[0].tanim), 1, 1))
+        uret3, K3 = sentetik_poz_ureteci(gurultu_px=GURULTU_PX, seed=TOHUM)
+        c = aci_taramasi(duruslar, [aci], uret3, K3,
+                         konum_belirsizligi_m=kov).noktalar[0].sayimlar[VALGUS]
         a = next(n for n in bilmeyen.noktalar if n.aci_derece == aci).sayimlar[VALGUS]
         satirlar.append({
             "aci_derece": aci,
@@ -134,17 +162,28 @@ def main() -> None:
                 "dogruluk": round(a.dogruluk, 4),
                 "yanlis_karar_orani": round(a.yanlis_karar_orani, 4),
                 "yanlis": a.yanlis, "belirsiz": a.belirsiz,
+                "kacirma": a.kacirma, "yanlis_alarm": a.yanlis_alarm,
             },
             "bilen": {
                 "dogruluk": round(b.dogruluk, 4),
                 "yanlis": b.yanlis, "belirsiz": b.belirsiz,
                 "karar_verilen_oran": round(b.karar_verilen_oran, 4),
             },
+            "eksen_hatasi_mm": [round(float(v) * 1000.0, 1) for v in eksen],
+            "bilen_anizotrop": {
+                "dogruluk": round(c.dogruluk, 4),
+                "yanlis": c.yanlis, "kacirma": c.kacirma, "belirsiz": c.belirsiz,
+                "karar_verilen_oran": round(c.karar_verilen_oran, 4),
+                "yanlis_karar_orani": (None if not np.isfinite(c.yanlis_karar_orani)
+                                       else round(c.yanlis_karar_orani, 4)),
+            },
         })
 
     # Egrinin dirsegi: dogrulugun frontal degerinin %90'inin altina ilk dustugu
     # aci. Mutlak esik kullanilmiyor, cunku frontal dogruluk da 1 degil -- tek
     # gorus kestirimi onden bakarken bile kusursuz degil.
+    n_kusurlu = sum(form_degerlendir(d).olcumler[VALGUS].karar is Karar.KUSURLU
+                    for d in duruslar)
     frontal = satirlar[0]["bilmeyen"]["dogruluk"]
     dirsek = next((s["aci_derece"] for s in satirlar
                    if s["bilmeyen"]["dogruluk"] < 0.90 * frontal), None)
@@ -168,7 +207,19 @@ def main() -> None:
             "sagital_dogruluk": satirlar[-1]["bilmeyen"]["dogruluk"],
             "sagital_yanlis_karar_orani": satirlar[-1]["bilmeyen"]["yanlis_karar_orani"],
             "bilen_toplam_yanlis": sum(s["bilen"]["yanlis"] for s in satirlar),
+            "anizotrop_frontal_karar_orani": satirlar[0]["bilen_anizotrop"]["karar_verilen_oran"],
+            "anizotrop_frontal_dogruluk": satirlar[0]["bilen_anizotrop"]["dogruluk"],
+            "anizotrop_toplam_yanlis": sum(s["bilen_anizotrop"]["yanlis"] for s in satirlar),
+            "frontal_eksen_hatasi_mm": satirlar[0]["eksen_hatasi_mm"],
             "bilmeyen_toplam_yanlis": sum(s["bilmeyen"]["yanlis"] for s in satirlar),
+            # Yanlis kararin turu (dis inceleme A.2). Payda: yer gercegine gore
+            # gercekten kusurlu olan duruslar -- "kusurlarin kacta kacini kacirdi".
+            "gercek_kusurlu_durus": n_kusurlu,
+            "frontal_kacirilan_kusur_orani": round(satirlar[0]["bilmeyen"]["kacirma"] / n_kusurlu, 4),
+            "sagital_kacirilan_kusur_orani": round(satirlar[-1]["bilmeyen"]["kacirma"] / n_kusurlu, 4),
+            "bilmeyen_yanlislarin_kacirma_payi": round(
+                sum(s["bilmeyen"]["kacirma"] for s in satirlar)
+                / sum(s["bilmeyen"]["yanlis"] for s in satirlar), 4),
         },
     }
 

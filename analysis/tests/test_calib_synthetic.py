@@ -68,5 +68,51 @@ def test_gurultusuz_sahne_tam_izdusum():
 def test_poz_dagilimlari_farkli_cesitlilik_uretiyor():
     dar = POZ_DAGILIMLARI["dar"].pozlar(30, seed=1)
     genis = POZ_DAGILIMLARI["genis"].pozlar(30, seed=1)
-    yayilim = lambda pozlar: np.std([t.ravel() for _, t in pozlar], axis=0).sum()
+    def yayilim(pozlar):
+        return np.std([t.ravel() for _, t in pozlar], axis=0).sum()
+
     assert yayilim(genis) > yayilim(dar) * 3
+
+
+# --- B.5.1: kamera arkasi noktalar (dis inceleme bulgusu) --------------------
+
+def test_kamera_arkasindaki_nokta_gorulmus_sayilmaz():
+    """Kameranin arkasindaki nokta kadraja dusse bile gozlem uretmemeli.
+
+    `cv2.projectPoints` negatif Z'li noktalari da izdusurur ve sonuc cogu zaman
+    kadrajin **icine** duser -- 1 m arkadaki bir nokta tam merkeze gelir. Yalnizca
+    kadraj kontrolu yapan bir suzgec bunu "gorulmus" sayar ve sentetik veriye
+    sessizce cop girer. Dis inceleme B.5.1.
+    """
+    import numpy as np
+    from calib.synthetic import nokta_gozlemleri, rig_yay
+
+    kam = rig_yay(odak_px=900.0)[0]
+    ileri = -kam.merkez / np.linalg.norm(kam.merkez)
+    arkada = kam.merkez - ileri * 1.0
+
+    z_cam = float((kam.R @ arkada + kam.t.ravel())[2])
+    assert z_cam < 0                      # gercekten arkada
+
+    gozlem = nokta_gozlemleri([kam], arkada.reshape(1, 3))[0]
+    assert 0 not in gozlem
+
+
+def test_board_kamera_arkasina_duserse_kare_gorulmus_sayilmaz():
+    """Ayni tuzak sahne uretiminde: arkadaki board kare `mask=1` almamali.
+
+    Kamera board'a **sirti donuk** kuruluyor (R=I, t=[0,0,-3]): board orijin
+    civarinda, kamera onu arkasinda birakiyor. Izdusum yine kadraj merkezine
+    duser, yani yalnizca kadraj bakan bir suzgec butun kareleri "gordu" sayar.
+    """
+    import numpy as np
+    from calib.board import BoardSpec
+    from calib.synthetic import sahne_uret
+
+    kameralar = [Kamera(
+        K=np.array([[900.0, 0.0, 640.0], [0.0, 900.0, 360.0], [0.0, 0.0, 1.0]]),
+        R=np.eye(3), t=np.array([[0.0], [0.0], [-3.0]]), boyut=(1280, 720),
+    )]
+    s = sahne_uret(BoardSpec(5, 7), kameralar=kameralar, n_kare=5,
+                   gurultu_px=0.0, dagilim="dar", seed=1)
+    assert int(s.mask.sum()) == 0

@@ -162,3 +162,75 @@ def test_egri_cizim_icin_hazir():
     x, y = sonuc.egri(VALGUS)
     assert x == list(ACILAR)
     assert len(y) == len(ACILAR)
+
+
+def test_oncu_durus_basina_uretilebilir():
+    """Oncu sozlesmesi sabit sozluk yerine uretec de kabul etmeli.
+
+    Gercek kullanicinin kemik uzunluklari bilinmedigi icin oncu hatasinin
+    etkisi ancak durus basina bagimsiz cekilen hatayla olculebilir; sabit bir
+    sozluk bunu yapamaz.
+    """
+    cagrilar = []
+
+    def bozuk(durus):
+        cagrilar.append(durus)
+        return {cift: u * 1.10 for cift, u in kemik_onculeri(durus).items()}
+
+    uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
+    duruslar = _duruslar()
+    bozuk_sonuc = aci_taramasi(duruslar, [0.0], uret, K, onculer=bozuk)
+
+    uret2, K2 = sentetik_poz_ureteci(gurultu_px=0.0)
+    temiz = aci_taramasi(duruslar, [0.0], uret2, K2)
+
+    assert len(cagrilar) == len(duruslar)
+    # Bozuk oncu dogrulugu dusurmeli; yukseltiyorsa sozlesme baglanmamis demektir.
+    assert _sayim(bozuk_sonuc, 0.0).dogruluk <= _sayim(temiz, 0.0).dogruluk
+
+
+# --- dis inceleme A.1: girdi dogrulamasi ------------------------------------
+
+@pytest.mark.parametrize("acilar,mesaj", [
+    ([], "en az bir aci"),
+    ([0.0, float("nan")], "sonlu"),
+    ([30.0, 30.0], "tekrarli"),
+])
+def test_gecersiz_acilar_reddedilir(acilar, mesaj):
+    uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
+    with pytest.raises(ValueError, match=mesaj):
+        aci_taramasi(_duruslar(), acilar, uret, K)
+
+
+def test_bozuk_k_reddedilir():
+    uret, _ = sentetik_poz_ureteci(gurultu_px=0.0)
+    with pytest.raises(ValueError, match="K"):
+        aci_taramasi(_duruslar(), [0.0], uret, np.eye(2))
+
+
+# --- dis inceleme A.2: yanlis kararin turu -----------------------------------
+
+def test_yanlis_karar_kacirma_ve_yanlis_alarm_olarak_ayrilir():
+    """Yanlis = kacirma + yanlis alarm; iki tur ayri raporlanir."""
+    uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
+    sonuc = aci_taramasi(_duruslar(), [90.0], uret, K)
+    s = _sayim(sonuc, 90.0)
+    assert s.yanlis > 0                                  # yandan bakista hata var
+    assert s.kacirma + s.yanlis_alarm == s.yanlis
+    assert s.kacirma_orani + s.yanlis_alarm_orani == pytest.approx(s.yanlis_karar_orani)
+    ozet = sonuc.ozet()["noktalar"][0]["olcumler"][VALGUS]
+    assert ozet["kacirma"] == s.kacirma and ozet["yanlis_alarm"] == s.yanlis_alarm
+
+
+def test_sayim_tutarsizsa_kurulamaz():
+    from eval.aci_taramasi import KararSayimi
+    with pytest.raises(ValueError, match="kacirma"):
+        KararSayimi(dogru=1, yanlis=2, kacirma=1, yanlis_alarm=0)
+
+
+def test_yer_gercegi_karar_veremezse_referanssiz_sayilir():
+    from eval.aci_taramasi import _sonuc
+    from eval.form import Karar
+    assert _sonuc(Karar.BELIRSIZ, Karar.KUSURLU) == "referanssiz"
+    assert _sonuc(Karar.KUSURLU, Karar.DOGRU) == "kacirma"
+    assert _sonuc(Karar.DOGRU, Karar.KUSURLU) == "yanlis_alarm"

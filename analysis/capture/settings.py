@@ -27,12 +27,20 @@ def configure_source(handle, camera):
         for name, property_id in PROPERTIES.items():
             if requested[name] is None:
                 continue
-            accepted = bool(handle.set(property_id, requested[name])) if hasattr(handle, "set") else False
+            # hasattr yeterli degil: `set` bir property/ozel nesne olabilir ve
+            # cagri aninda TypeError verir. Denemek tek guvenilir denetim.
+            try:
+                accepted = bool(handle.set(property_id, requested[name]))
+            except (AttributeError, TypeError):
+                accepted = False
             report["set_accepted"][name] = accepted
             if not accepted:
                 report["issues"].append(f"{name}: sürücü ayarı kabul etmedi")
     for name, property_id in PROPERTIES.items():
-        raw = handle.get(property_id) if hasattr(handle, "get") else None
+        try:
+            raw = handle.get(property_id)
+        except (AttributeError, TypeError):
+            raw = None
         value = float(raw) if raw is not None else None
         if value is not None and (not math.isfinite(value) or value <= 0):
             value = None

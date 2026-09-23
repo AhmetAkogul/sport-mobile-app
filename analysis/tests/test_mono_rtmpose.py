@@ -31,8 +31,20 @@ def test_scores_are_not_claimed_as_probabilities():
     scores=np.ones(17)*1.2
     pose=coco_to_pose(np.zeros((17,2)),scores,(640,480),model='test')
     assert (pose.guven == 1).all()
-    assert pose.ek['raw_scores'] == scores.tolist()
     assert pose.ek['score_semantics'] == 'simcc_not_calibrated_probability'
+    # Yalnizca kullanilan eklemlerin ham skorlari saklanir (yuz skorlari degil).
+    assert pose.ek['raw_scores_joints'] == list(range(5, 17))
+    assert pose.ek['raw_scores'] == [scores[i] for i in pose.ek['raw_scores_joints']]
+
+
+def test_simcc_esigi_mediapipe_esiginden_ayridir():
+    """SIMCC skoru olasilik degil: ayni esik iki modelde farkli anlam tasir."""
+    from mono.rtmpose_model import SIMCC_GUVEN_ESIGI
+    assert SIMCC_GUVEN_ESIGI < 0.5
+    scores = np.full(17, 0.4)
+    pose = coco_to_pose(np.zeros((17, 2)), scores, (640, 480), model='test')
+    assert pose.gorunur.all(), "0.4 SIMCC'de dusuk guven degil; MediaPipe esigiyle saklanmamali"
+    assert pose.ek['guven_esigi'] == SIMCC_GUVEN_ESIGI
 
 
 def estimator(boxes):
@@ -48,7 +60,7 @@ def test_no_person_does_not_run_pose_on_full_image():
     model=estimator([])
     model._pose=lambda *a,**kw: pytest.fail('Kişi yokken poz modeli çağrıldı')
     pose=model(np.zeros((100,100,3),np.uint8))
-    assert not pose.gorunur.any() and not pose.ek['tespit']
+    assert not pose.gorunur.any() and pose.tespit is False
 
 
 def test_multiple_people_need_explicit_selection():
@@ -62,7 +74,8 @@ def test_single_person_and_close():
     model._pose=lambda *a,**kw: (np.ones((1,17,2))*25,np.ones((1,17))*.9)
     pose=model(np.zeros((100,100,3),np.uint8))
     assert pose.gorunur.all() and pose.goruntu_boyutu == (100,100)
-    model.close(); model.close()
+    model.close()
+    model.close()
     with pytest.raises(RuntimeError):
         model(np.zeros((100,100,3),np.uint8))
 

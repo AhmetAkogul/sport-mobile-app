@@ -27,6 +27,25 @@ def test_rejects_mismatched_row(key, value):
         validate_row(data, 0, (100, 100), 'test')
 
 
+def test_tespit_yoksa_koordinat_tasinmaz():
+    """Tespit yokken nokta da yoktur: null/NaN, 0.0 değil (tek politika)."""
+    data = row()
+    data['visible'] = [False] * 13
+    data['tespit'] = False
+    with pytest.raises(ValueError, match='Tespit yokken'):
+        validate_row(data, 0, (100, 100), 'test')
+    data['points_px'] = [[None, None]] * 13     # JSON'da null -> NaN
+    assert not np.isfinite(validate_row(data, 0, (100, 100), 'test')[0]).any()
+
+
+def test_esik_alti_eklem_maskelenir_koordinat_korunur():
+    """Poz2B sözleşmesi: eşik altı eklem görünmez ama noktası silinmez."""
+    data = row()
+    data['visible'][0] = False
+    points, _, visible = validate_row(data, 0, (100, 100), 'test')
+    assert np.isfinite(points[0]).all() and not visible[0]
+
+
 def test_visibility_and_source_preserved():
     pytest.importorskip('supervision')
     renderer = PoseRenderer()

@@ -172,3 +172,70 @@ def test_dort_parametreli_bozulma_turu():
         "Ts": [[[ "0.0"], ["0.0"], ["0.0"]]],
     })
     np.testing.assert_array_equal(geri.bozulmalar[0], np.append(v, 0.0))
+
+
+# --- dis inceleme B.3.1 / B.3.2 / B.4.1 --------------------------------------
+
+def test_ks_sekli_dogrulaniyor():
+    """Bozuk bir kayittaki K sessizce kabul edilmemeli (B.3.1).
+
+    Rs ve Ts sekilleri denetleniyordu, Ks ve bozulmalar denetlenmiyordu.
+    Yazan kod bozuksa okuyan kod yanlis veriyi kabul ederdi.
+    """
+    import numpy as np
+    import pytest
+    from calib.io import Kabin
+
+    with pytest.raises(ValueError, match="Ks"):
+        Kabin(meta=Meta(tarih_iso="2026-09-23T00:00:00+00:00", n_kamera=1),
+              Ks=[np.zeros((2, 2))], bozulmalar=[np.zeros(5)],
+              Rs=[np.eye(3)], Ts=[np.zeros((3, 1))])
+
+
+def test_bozulma_sekli_dogrulaniyor():
+    import numpy as np
+    import pytest
+    from calib.io import Kabin
+
+    with pytest.raises(ValueError, match="bozulma"):
+        Kabin(meta=Meta(tarih_iso="2026-09-23T00:00:00+00:00", n_kamera=1),
+              Ks=[np.eye(3)], bozulmalar=[np.zeros((2, 3))],
+              Rs=[np.eye(3)], Ts=[np.zeros((3, 1))])
+
+
+def test_kamera_modeli_kayitta_korunuyor(tmp_path):
+    """Fisheye/pinhole ayrimi yaz-oku turunde kaybolmamali (B.3.2).
+
+    Kayip oldugunda kaydedilen kalibrasyon sonradan yorumlanamaz: 4 elemanli
+    fisheye bozulmasi 5 elemanli pinhole'a tamamlanip model bilgisi silinirdi.
+    """
+    import numpy as np
+    from calib.io import kalibrasyona, kalibrasyondan, oku, yaz
+    from calib.multiview import Kalibrasyon
+
+    kalib = Kalibrasyon(
+        rms_px=0.3, Ks=[np.eye(3)], bozulmalar=[np.zeros(4)],
+        Rs=[np.eye(3)], Ts=[np.zeros((3, 1))], modeller=("fisheye",))
+    yol = yaz(kalibrasyondan(kalib, n_kare=5), tmp_path / "k.json")
+    geri = kalibrasyona(oku(yol))
+
+    assert geri.modeller == ("fisheye",)
+    assert geri.bozulmalar[0].size == 4        # pinhole'a tamamlanmamis
+
+
+def test_model_bilgisi_yoksa_pinhole_varsayiliyor(tmp_path):
+    """Eski kayitlar (model alani yok) eskisi gibi okunmali."""
+    import json
+    import numpy as np
+    from calib.io import kalibrasyona, kalibrasyondan, oku, yaz
+    from calib.multiview import Kalibrasyon
+
+    kalib = Kalibrasyon(rms_px=0.3, Ks=[np.eye(3)], bozulmalar=[np.zeros(5)],
+                        Rs=[np.eye(3)], Ts=[np.zeros((3, 1))])
+    yol = yaz(kalibrasyondan(kalib), tmp_path / "eski.json")
+    d = json.loads(yol.read_text(encoding="utf-8"))
+    d["meta"].pop("modeller", None)
+    yol.write_text(json.dumps(d), encoding="utf-8")
+
+    geri = kalibrasyona(oku(yol))
+    assert geri.bozulmalar[0].size == 5

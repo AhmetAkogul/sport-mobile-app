@@ -98,3 +98,43 @@ def test_yetersiz_nokta_reddedilir(kaynak, hedef):
 def test_uyusmayan_kume_reddedilir():
     with pytest.raises(ValueError, match="ayni sekilde"):
         rijit_hizala(NOKTALAR, NOKTALAR[:3])
+
+
+# --- dis inceleme H.1 / H.2 / H.3 --------------------------------------------
+
+def test_dejenere_kaynak_reddediliyor():
+    """Butun noktalar ayniysa rotasyon tanimsiz; keyfi bir R dondurulmemeli (H.1).
+
+    SVD bos bir matriste keyfi bir donme uretir ve olcek 1.0'a duser; sonuc
+    anlamsiz ama gecerli gorunur.
+    """
+    import numpy as np
+    import pytest
+    from pose3d.hizalama import rijit_hizala
+
+    ayni = np.tile(np.array([0.1, 0.2, 0.3]), (4, 1))
+    with pytest.raises(ValueError, match="dejenere"):
+        rijit_hizala(ayni, ayni + 0.5)
+
+
+def test_hizalama_alanlari_dogrulaniyor():
+    """Hizalama dogrulamasiz bir sinifti (H.2)."""
+    import numpy as np
+    import pytest
+    from pose3d.hizalama import Hizalama
+
+    with pytest.raises(ValueError, match="R"):
+        Hizalama(R=np.eye(2), t=np.zeros(3), olcek=1.0, rms_mm=0.0, en_buyuk_mm=0.0)
+    with pytest.raises(ValueError, match="olcek"):
+        Hizalama(R=np.eye(3), t=np.zeros(3), olcek=-1.0, rms_mm=0.0, en_buyuk_mm=0.0)
+
+
+def test_uygula_yanlis_sekli_reddediyor():
+    """reshape(-1, 3) boyut uydurur; (N,4) girdi sessizce saclanirdi (H.3)."""
+    import numpy as np
+    import pytest
+    from pose3d.hizalama import Hizalama
+
+    h = Hizalama(R=np.eye(3), t=np.zeros(3), olcek=1.0, rms_mm=0.0, en_buyuk_mm=0.0)
+    with pytest.raises(ValueError):
+        h.uygula(np.zeros((5, 4)))

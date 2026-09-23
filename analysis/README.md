@@ -11,10 +11,23 @@
 ```bash
 make kurulum     # bağımlılıkları kur
 make kontrol     # ortam doğru mu?
-make test        # testler
+make test        # testler (atlananlar nedeniyle listelenir)
+make reproduce   # 9 deneyin sayı ve şekilleri + sayı kilidi (~90 s)
 ```
 
 `make kontrol` "Her şey yerinde" demeden çalışmaya başlamayın.
+
+**Birebir aynı ortam** için tam sürümler `requirements-lock.txt`'te:
+`pip install -r requirements-lock.txt`. 23 Eylül 2026'da boş bir sanal ortamda
+bu dosyayla kurulum, 510 test ve `make reproduce` (2758 sayının hepsi kilitle
+aynı) doğrulandı. Kilit `make kilit-surum` ile yenilenir.
+
+Geliştirme: `make kurulum-dev` (ruff, pytest-cov), `make lint`, `make kapsam`.
+
+**Demo** (isteğe bağlı model ortamında, bkz. `docs/kararlar/0030`, `0031`):
+`python -m mono.demo --video v.mp4 --model m.task --intrinsics K.json --lengths L.json --output out/demo`
+→ işaretli video + kare başına iki form kararı (yalın eşik / belirsizliği bilen).
+Ayrıntı ve örnek sonuç: `docs/deney/2026-09-23-telefon-hatti-uctan-uca.md`.
 
 ## Katmanlar
 

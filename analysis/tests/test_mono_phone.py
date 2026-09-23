@@ -214,3 +214,31 @@ def test_bos_kare_listesi(onculer):
     assert o["n_kare"] == 0
     assert o["zamani_bilinen_kare"] == 0
     assert all(v == 0.0 for v in o["eklem_gorunurluk"].values())
+
+
+def test_hat_adaptorun_model_ozgu_esigini_ezmez(onculer):
+    """RTMPose 0.3 esikle maskeler; hat varsayilanla tekrar 0.5 uygulamamali.
+
+    Onceden hatti_kostur'un 0.5 varsayilani, 0.4 skorlu 13 eklemin hepsini
+    gorunmez yapiyordu (dis inceleme, 23 Eylul).
+    """
+    from mono.rtmpose_model import COCO_MAP, coco_to_pose
+
+    poz_ref = sentetik_poz(KAMERA, _poz_3b(), model="ref")
+    coco = np.zeros((17, 2))
+    for ad, k in COCO_MAP.items():
+        coco[k] = poz_ref.noktalar[REFERANS_ISKELET.indeks(ad)]
+    poz = coco_to_pose(coco, np.full(17, 0.4), KAMERA.boyut, model="rtmpose-test")
+    assert poz.gorunur.all()
+
+    sonuc = hatti_kostur(_kareler(1), lambda img: poz, K, onculer)
+    assert sonuc.pozlar[0].gorunur.sum() == len(REFERANS_ISKELET)
+    # acikca istenirse ek daraltma olarak uygulanir
+    dar = hatti_kostur(_kareler(1), lambda img: poz, K, onculer, guven_esigi=0.5)
+    assert not dar.pozlar[0].gorunur.any()
+
+
+def test_iskelette_olmayan_kemige_oncu_reddedilir():
+    poz = sentetik_poz(KAMERA, _poz_3b(), model="ref")
+    with pytest.raises(ValueError, match="tanimli olmayan kemik"):
+        tek_gorus_3b(poz, K, {("sag_bilek", "sol_ayak_bilegi"): 0.9})

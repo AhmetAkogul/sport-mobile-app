@@ -1,1 +1,5 @@
+# Istege bagli gorsellestirme. data/mediapipe-env'e, requirements-mediapipe.txt
+# ile kurulan ortamin USTUNE eklenir; ana bagimlilik zinciri orada (0032, 0033).
+# 0.30.5 opencv-python istemiyor (meta veri 23 Eylul'de okundu); surum
+# yukseltilirken tekrar bakin -- opencv-python, contrib ile ayni cv2'yi saglar.
 supervision==0.30.5
