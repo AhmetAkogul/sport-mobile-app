@@ -32,6 +32,7 @@ reproduce:        ## Rapordaki tum sayilari yeniden uret
 	$(PYTHON) scripts/deney_oncu_hatasi.py
 	$(PYTHON) scripts/deney_senkron_kaymasi.py
 	$(PYTHON) scripts/deney_derinlik_duyarliligi.py
+	$(PYTHON) scripts/deney_eklem_belirsizligi.py
 	$(PYTHON) scripts/sayi_kilidi.py
 
 kilit:            ## Rapordaki sayilari kilitle karsilastir (reproduce'dan sonra)

@@ -234,3 +234,14 @@ def test_yer_gercegi_karar_veremezse_referanssiz_sayilir():
     assert _sonuc(Karar.BELIRSIZ, Karar.KUSURLU) == "referanssiz"
     assert _sonuc(Karar.KUSURLU, Karar.DOGRU) == "kacirma"
     assert _sonuc(Karar.DOGRU, Karar.KUSURLU) == "yanlis_alarm"
+
+
+def test_0070_matrisi_eski_sayaclarla_tutarli():
+    """0070 paydalari KararSayimi'yle ayni sayilari vermeli (C, W, U, R)."""
+    uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
+    n = aci_taramasi(_duruslar(), [90.0], uret, K).noktalar[0]
+    s, m = n.sayimlar[VALGUS], n.matrisler[VALGUS]
+    assert (m.C, m.W, m.U, m.R, m.M) == (s.dogru, s.yanlis, s.belirsiz + s.gozlemsiz,
+                                          s.referanssiz, s.toplam)
+    o = m.oranlar()
+    assert o["Y"] == pytest.approx(s.dogruluk)      # Y = C/N; burada R = 0

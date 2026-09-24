@@ -33,6 +33,7 @@ DENEY_CIKTILARI = (
     "oncu_hatasi.json",
     "senkron_kaymasi.json",
     "derinlik_duyarliligi.json",
+    "eklem_belirsizligi.json",
 )
 
 # Ayni makinede cikti bit bit aynidir; baska platformda BLAS/libm farki kucuk
@@ -111,7 +112,8 @@ def main(argv: list[str] | None = None) -> int:
         # Yenilemeden once dokum: "yeni alan" ile "degisen sayi" ayni sey
         # degildir. Ikincisi CLAUDE.md ve deney kaydinda da guncellenmeli.
         farklar = karsilastir(json.loads(a.kilit.read_text(encoding="utf-8")), gozlenen)
-        degisen = [f for f in farklar if "yeni alan" not in f]
+        # Yeni alan ve kilitte hic olmayan yeni dosya "eklenen"dir; gerisi degisen.
+        degisen = [f for f in farklar if "yeni alan" not in f and "kilitte yok" not in f]
         print(f"yenileme dokumu: {len(farklar) - len(degisen)} yeni alan, "
               f"{len(degisen)} degisen/kaybolan")
         for satir in degisen[:20]:

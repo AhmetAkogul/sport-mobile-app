@@ -33,7 +33,7 @@ Ayrıntı ve örnek sonuç: `docs/deney/2026-09-23-telefon-hatti-uctan-uca.md`.
 
 | Katman | Rol | Hedef hata |
 |---|---|---|
-| Profesyonel (çoklu kamera) | Yer gerçeği üretir | ~20 mm |
+| Profesyonel (çoklu kamera) | Yer gerçeği olarak kullanılacak | hedef < 10 mm (Kapı 2), fiziksel olarak doğrulanmadı |
 | Tüketici (tek telefon) | Ölçülen nesne | ~150–250 mm (literatür) |
 | Düzeltme katmanı | Katkımız | Ölçülecek |
 

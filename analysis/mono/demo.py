@@ -9,10 +9,10 @@ Her kare icin **iki karar** yan yana verilir, cunku tezin mesaji bu farktir:
 
 Varsayilan konum belirsizligi 76 mm: sentetik deneyde tek gorus kestiriminin
 **onden bakista, mukemmel kemik onculeri ve sifir tespit gurultusuyle** olculen
-model hatasi (`docs/deney/2026-09-23-derinlik-duyarliligi.md`). Gercek kosulda
-hata bundan buyuktur; yani bu varsayilan iyimser bir alt sinirdir ve belirsizligi
-bilen kolun "degerlendirilemiyor" demesi bir arizaya degil, olcumun gercek
-sinirina isaret eder.
+sekil RMS'i (`docs/deney/2026-09-23-derinlik-duyarliligi.md`). Kalibre bir 1σ
+degildir, yalnizca buyukluk secimidir; gercek telefon hatasinin dagilimi
+olculmedi. Belirsizligi bilen kolun "degerlendirilemiyor" demesi bir ariza degil,
+bu buyuklukte bir belirsizligin karar esigine gore fazla oldugunu gosterir.
 
 Cikti (`--output` altinda):
     hat/            mono.run_phone ciktisi (results.jsonl, summary.json)
@@ -44,7 +44,7 @@ from pose3d.iskelet import REFERANS_ISKELET, Iskelet3B
 VARSAYILAN_KONUM_BELIRSIZLIGI_M = 0.076
 BELIRSIZLIK_KAYNAGI = (
     "docs/deney/2026-09-23-derinlik-duyarliligi.md: onden bakista sentetik "
-    "model hatasi (mukemmel oncu, sifir gurultu) -- gercek hatanin alt siniri")
+    "sekil RMS'i (mukemmel oncu, sifir gurultu) -- kalibre 1-sigma degil, buyukluk secimi")
 
 _RENK = {Karar.DOGRU: (80, 200, 80), Karar.KUSURLU: (60, 60, 230),
          Karar.BELIRSIZ: (0, 190, 240)}

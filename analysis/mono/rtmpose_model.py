@@ -13,6 +13,7 @@ yaniltir. Bu yuzden:
   (`ek["raw_scores"]`).
 """
 
+from dataclasses import replace
 from importlib.metadata import version
 import math
 from pathlib import Path
@@ -61,7 +62,20 @@ def coco_to_pose(points, scores, size, *, model, threshold=SIMCC_GUVEN_ESIGI):
 
 
 class RTMPoseEstimator:
-    def __init__(self, detector_path, pose_path, *, threshold=SIMCC_GUVEN_ESIGI):
+    coklu_kisi = "hata"          # varsayilan: tek kisi sozlesmesi, sessiz secim yok
+
+    def __init__(self, detector_path, pose_path, *, threshold=SIMCC_GUVEN_ESIGI,
+                 coklu_kisi="hata"):
+        """`coklu_kisi`: dedektor birden fazla kisi bulursa ne yapilir.
+
+        - "hata" (varsayilan): tek kisi sozlesmesi; sessiz secim yapilmaz.
+        - "en_buyuk": en buyuk kutu secilir. Yer gercegine bakmaz, bu yuzden
+          MediaPipe'in kendi tek-kisi secimine denk bir kuraldir (kiyas adil
+          kalir). Kac kisi bulundugu ve secim `ek` alaninda raporlanir.
+        """
+        if coklu_kisi not in ("hata", "en_buyuk"):
+            raise ValueError("coklu_kisi 'hata' ya da 'en_buyuk' olmali")
+        self.coklu_kisi = coklu_kisi
         if type(threshold) not in (int, float) or not math.isfinite(threshold) or not 0 <= threshold <= 1:
             raise ValueError("Güven eşiği 0..1 aralığında olmalı.")
         for path in (detector_path, pose_path):
@@ -90,12 +104,21 @@ class RTMPoseEstimator:
             n = len(REFERANS_ISKELET)
             return Poz2B(REFERANS_ISKELET, np.full((n, 2), np.nan), np.zeros(n),
                          np.zeros(n, bool), False, (width, height), model=self.model_id)
-        if len(boxes) != 1:
-            raise ValueError("Birden fazla kişi bulundu; kişi seçimi/izlemesi gerekli.")
+        n_kisi = len(boxes)
+        if n_kisi != 1:
+            if self.coklu_kisi == "hata":
+                raise ValueError("Birden fazla kişi bulundu; kişi seçimi/izlemesi gerekli.")
+            kutular = np.asarray(boxes, float)
+            alan = (kutular[:, 2] - kutular[:, 0]) * (kutular[:, 3] - kutular[:, 1])
+            boxes = kutular[[int(np.argmax(alan))]]
         points, scores = self._pose(image_bgr, bboxes=boxes)
         if len(points) != 1 or len(scores) != 1:
             raise ValueError("Tek kişi için beklenmeyen model çıktısı.")
-        return coco_to_pose(points[0], scores[0], (width, height), model=self.model_id, threshold=self.threshold)
+        poz = coco_to_pose(points[0], scores[0], (width, height), model=self.model_id,
+                           threshold=self.threshold)
+        if n_kisi != 1:
+            poz = replace(poz, ek={**poz.ek, "bulunan_kisi": n_kisi, "kisi_secimi": "en_buyuk"})
+        return poz
 
     def close(self):
         if self._closed:                      # idempotent: ikinci cagri zararsiz

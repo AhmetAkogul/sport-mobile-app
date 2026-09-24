@@ -19,13 +19,14 @@ gercek kayitlar geldiginde ayni tarama, ayni egriyi gercek veriyle uretir.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Iterable
 
 import numpy as np
 
 from calib.synthetic import rig_yay
 from eval.form import Esik, Karar, form_degerlendir
+from eval.protokol import Sayim
 from mono.phone import UzunlukOnculeri, tek_gorus_3b
 from pose3d.iskelet import REFERANS_ISKELET, Iskelet3B, IskeletTanimi
 from pose3d.pose2d import Poz2B, sentetik_poz
@@ -113,6 +114,8 @@ class TaramaNoktasi:
     aci_derece: float
     sayimlar: dict[str, KararSayimi]
     aci_hatasi_derece: dict[str, float]   # |telefon - yer gercegi| ortalamasi
+    # 0070 §1 matrisi: olcum -> Sayim{(referans, telefon)}; gozlemsiz telefon None.
+    matrisler: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -261,12 +264,14 @@ def aci_taramasi(
                       "gozlemsiz": 0, "referanssiz": 0}
                  for ad in adlar}
         hatalar: dict[str, list[float]] = {ad: [] for ad in adlar}
+        ciftler: dict[str, list[tuple]] = {ad: [] for ad in adlar}
 
         for durus, gercek_rapor in zip(duruslar, gercek):
             poz = poz_uret(float(aci), durus)
             if poz is None:
                 for ad in adlar:
                     sayim[ad]["gozlemsiz"] += 1
+                    ciftler[ad].append((str(gercek_rapor.olcumler[ad].karar), None))
                 continue
             if onculer is None:
                 durus_onculeri = kemik_onculeri(durus)
@@ -282,6 +287,8 @@ def aci_taramasi(
             for ad in adlar:
                 sayim[ad][_sonuc(gercek_rapor.olcumler[ad].karar,
                                  telefon_rapor.olcumler[ad].karar)] += 1
+                ciftler[ad].append((str(gercek_rapor.olcumler[ad].karar),
+                                    str(telefon_rapor.olcumler[ad].karar)))
                 a = telefon_rapor.olcumler[ad].deger
                 b = gercek_rapor.olcumler[ad].deger
                 if np.isfinite(a) and np.isfinite(b):
@@ -295,6 +302,7 @@ def aci_taramasi(
                 ad: float(np.mean(v)) if v else float("nan")
                 for ad, v in hatalar.items()
             },
+            matrisler={ad: Sayim.ciftlerden(c) for ad, c in ciftler.items()},
         ))
 
     return TaramaSonucu(noktalar=tuple(noktalar), olcum_adlari=adlar)

@@ -93,6 +93,11 @@ def eksen_hatalari(duruslar: list, aci: float) -> np.ndarray:
     return np.sqrt(np.mean(a ** 2, axis=0))
 
 
+def _protokol(sayim) -> dict:
+    o = sayim.oranlar()
+    return {k: (round(v, 4) if isinstance(v, float) else v) for k, v in o.items()}
+
+
 def cizim(satirlar: list[dict], hedef: Path) -> None:
     import matplotlib
     matplotlib.use("Agg")
@@ -170,6 +175,12 @@ def main() -> None:
                 "karar_verilen_oran": round(b.karar_verilen_oran, 4),
             },
             "eksen_hatasi_mm": [round(float(v) * 1000.0, 1) for v in eksen],
+            # 0070 §1 paydalari ve oranlari (A=C/D, K=D/N, Y=C/N; tanimsiz None).
+            "protokol_0070": {
+                "bilmeyen": _protokol(next(n for n in bilmeyen.noktalar
+                                           if n.aci_derece == aci).matrisler[VALGUS]),
+                "bilen": _protokol(bilen.noktalar[0].matrisler[VALGUS]),
+            },
             "bilen_anizotrop": {
                 "dogruluk": round(c.dogruluk, 4),
                 "yanlis": c.yanlis, "kacirma": c.kacirma, "belirsiz": c.belirsiz,
@@ -211,6 +222,12 @@ def main() -> None:
             "anizotrop_frontal_dogruluk": satirlar[0]["bilen_anizotrop"]["dogruluk"],
             "anizotrop_toplam_yanlis": sum(s["bilen_anizotrop"]["yanlis"] for s in satirlar),
             "frontal_eksen_hatasi_mm": satirlar[0]["eksen_hatasi_mm"],
+            # 0070: sentetik duruslar kisi degildir -> kisi agirligi ve aralik yok.
+            "protokol_0070_frontal": {k: satirlar[0]["protokol_0070"]["bilmeyen"][k]
+                                      for k in ("A", "K", "Y", "A_dengeli", "K_dengeli")},
+            "protokol_0070_sagital": {k: satirlar[-1]["protokol_0070"]["bilmeyen"][k]
+                                      for k in ("A", "K", "Y", "A_dengeli", "K_dengeli")},
+            "protokol_0070_aralik": "dogrulanmadi: sentetik duruslar bagimsiz kisi degil (0070 §2)",
             "bilmeyen_toplam_yanlis": sum(s["bilmeyen"]["yanlis"] for s in satirlar),
             # Yanlis kararin turu (dis inceleme A.2). Payda: yer gercegine gore
             # gercekten kusurlu olan duruslar -- "kusurlarin kacta kacini kacirdi".

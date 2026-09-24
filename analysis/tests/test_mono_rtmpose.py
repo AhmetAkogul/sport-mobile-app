@@ -84,3 +84,25 @@ def test_single_person_and_close():
 def test_invalid_threshold_before_optional_import(threshold):
     with pytest.raises(ValueError):
         RTMPoseEstimator('missing','missing',threshold=threshold)
+
+
+def test_en_buyuk_kisi_secimi_istege_bagli_ve_raporlanir():
+    """Varsayilan hata verir; 'en_buyuk' secilirse en buyuk kutu kullanilir."""
+    model = estimator([[0, 0, 20, 20], [10, 10, 90, 90]])
+    secilen = {}
+
+    def poz(img, bboxes):
+        secilen["kutu"] = np.asarray(bboxes).tolist()
+        return np.ones((1, 17, 2)) * 25, np.ones((1, 17)) * .9
+
+    model._pose = poz
+    model.coklu_kisi = "en_buyuk"
+    pose = model(np.zeros((100, 100, 3), np.uint8))
+    assert secilen["kutu"] == [[10, 10, 90, 90]]
+    assert pose.ek["bulunan_kisi"] == 2 and pose.ek["kisi_secimi"] == "en_buyuk"
+
+
+def test_gecersiz_coklu_kisi_kurali_reddedilir(tmp_path):
+    from mono.rtmpose_model import RTMPoseEstimator
+    with pytest.raises(ValueError, match="coklu_kisi"):
+        RTMPoseEstimator(tmp_path / "d.onnx", tmp_path / "p.onnx", coklu_kisi="rastgele")
