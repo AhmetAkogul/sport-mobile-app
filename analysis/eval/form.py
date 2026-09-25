@@ -188,37 +188,50 @@ _GEREKLI: dict[str, tuple[str, ...]] = {
 }
 
 
+# Uyluk/baldir uzunluk orani insanda ~1,0-1,25 (eklem merkezleri arasi); EC3D'nin
+# 3668 squat karesinde 0,96-1,04. Aralik, isaretsiz kestirimin gurultusune genis
+# pay birakir; yalnizca anatomik olarak imkansiz geometriyi eler (0014).
+UYLUK_BALDIR_ORANI = (0.5, 2.0)
+
+
 def _diz_valgusu(P: np.ndarray, tanim: IskeletTanimi, c: GovdeCercevesi,
                  taraf: str) -> float:
-    """Frontal duzlem diz acisinin duzden sapmasi (derece); + ise valgus.
+    """Dizin tarafsiz bacak duzleminden orta hatta kacisi (derece); + ise valgus.
 
-    Literaturdeki FPPA ile ayni tanim: kalca-diz ve ayak bilegi-diz vektorleri
-    frontal duzleme yansitilir, aralarindaki aci 180 dereceden ne kadar sapiyorsa
-    o kadar bozukluk vardir. Isaret, dizin kalca-ayak bilegi dogrusuna gore
-    **orta hatta** mi yoksa disa mi kactigindan gelir.
+    Tarafsiz bacak duzlemi kalca-ayak bilegi dogrusunu icerir ve kalca eksenine
+    (sag kalca -> sol kalca) diktir. Diz bukulmesi dizi bu duzlemin **icinde**
+    one goturur ve olcumu degistirmez; valgus dizi duzlemin **disina**, orta
+    hatta goturur. Dizin duzleme isaretli uzakligi d icin aci
+    asin(d/|uyluk|) + asin(d/|baldir|)'dir. Duz bacakta bu, frontal duzlem
+    izdusum acisiyla (FPPA) birebir aynidir; bukulmede FPPA'nin aksine anlamini
+    korur. Ayni fikir marker'li olcumde kalca-ayak bilegi-ayak ucu duzlemine
+    diz uzakligi olarak kullaniliyor (Cotic ve ark. 2020); ayak ucu eklemimiz
+    olmadigi icin duzlem kalca ekseniyle kurulur.
+
+    Eski tanim (govde frontal duzlemine izdusum) EC3D'de derin comelmede
+    78-84 derece uretti: `docs/kararlar/0014-bukulmeye-dayanikli-valgus.md`.
     """
     i = tanim.indeks
     h, k, a = P[i(f"{taraf}_kalca")], P[i(f"{taraf}_diz")], P[i(f"{taraf}_ayak_bilegi")]
-
-    def yansit(p: np.ndarray) -> np.ndarray:
-        d = p - c.merkez
-        return np.array([d @ c.yanal, d @ c.yukari])
-
-    h2, k2, a2 = yansit(h), yansit(k), yansit(a)
-    u, v = _birim(h2 - k2), _birim(a2 - k2)
-    if u is None or v is None:
+    u = _birim(a - h)
+    if u is None:
         return float("nan")
-    sapma = 180.0 - float(np.degrees(np.arccos(np.clip(u @ v, -1.0, 1.0))))
-
-    bacak = a2 - h2
-    uzunluk2 = float(bacak @ bacak)
-    if uzunluk2 < 1e-12:
+    yanal_ham = P[i("sol_kalca")] - P[i("sag_kalca")]
+    n = _birim(yanal_ham - (yanal_ham @ u) * u)
+    uyluk, baldir = float(np.linalg.norm(k - h)), float(np.linalg.norm(k - a))
+    if n is None or uyluk < 1e-9 or baldir < 1e-9:
         return float("nan")
-    t = float((k2 - h2) @ bacak) / uzunluk2
-    yanal_kacis = float((k2 - (h2 + t * bacak))[0])
-    # `yanal` sagdan sola bakar: sag bacak icin orta hat +yanal, sol icin -yanal.
-    medial = 1.0 if taraf == "sag" else -1.0
-    return float(np.sign(yanal_kacis * medial) * sapma)
+    # Anatomik tutarlilik: bozuk bir kestirim (or. yandan bakan telefonda 2 m'lik
+    # uyluk) duzlem disina buyuk bir kacis uretir ve yalin esik ona guvenle
+    # "dogru" der. Oran olcekten bagimsizdir; disindaysa olcum yoktur (NaN).
+    # Kapali aralik; sinirdaki kayan nokta yuvarlamasi icin 1e-9 goreli pay.
+    oran = uyluk / baldir
+    if not (UYLUK_BALDIR_ORANI[0] * (1 - 1e-9) <= oran <= UYLUK_BALDIR_ORANI[1] * (1 + 1e-9)):
+        return float("nan")
+    # n sagdan sola bakar: sag bacak icin orta hat +n, sol icin -n.
+    d = float((k - h) @ n) * (1.0 if taraf == "sag" else -1.0)
+    return float(np.degrees(np.arcsin(np.clip(d / uyluk, -1.0, 1.0))
+                            + np.arcsin(np.clip(d / baldir, -1.0, 1.0))))
 
 
 def _kalca_hizasi(P: np.ndarray, tanim: IskeletTanimi, c: GovdeCercevesi) -> float:
@@ -406,6 +419,8 @@ def form_degerlendir(
     karari `BELIRSIZ` olur, eksik eklemlerin adi raporda tasinir.
     """
     esikler = {**VARSAYILAN_ESIKLER, **(esikler or {})}
+    if konum_belirsizligi_m is not None:
+        iskelet.metrik_gerekli()
     tanim = iskelet.tanim
     degerler = _tum_olcumler(iskelet.noktalar, tanim)
 

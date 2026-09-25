@@ -19,6 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import numpy as np  # noqa: E402
+
 from eval.form import (
     VARSAYILAN_ESIKLER, VARSAYILAN_K, form_degerlendir, sentetik_durus,
 )
@@ -44,6 +46,12 @@ TOHUM = 20260922
 DOYGUNLUK_DERECE = 45.0
 
 
+def _yuvarla(x: float) -> float | None:
+    """NaN -> None (JSON null): olcum ornekleri anatomik olarak imkansiz geometriye
+    dustugunde belirsizlik hesaplanamaz (0014); uydurulmaz."""
+    return round(float(x), 3) if np.isfinite(x) else None
+
+
 def tara() -> list[dict]:
     """Her belirsizlik degeri icin acisal sacilim ve karar."""
     iskelet = sentetik_durus(valgus_sag=GERCEK_VALGUS)
@@ -53,8 +61,10 @@ def tara() -> list[dict]:
                                  n_ornek=N_ORNEK, seed=TOHUM)
         olcumler = {
             ad: {
-                "belirsizlik_derece": round(o.belirsizlik, 3),
-                "doygun": bool(o.belirsizlik > DOYGUNLUK_DERECE),
+                "belirsizlik_derece": _yuvarla(o.belirsizlik),
+                # NaN da doygunluktur: aci bilgi tasimiyor.
+                "doygun": bool(not np.isfinite(o.belirsizlik)
+                               or o.belirsizlik > DOYGUNLUK_DERECE),
             }
             for ad, o in rapor.olcumler.items()
         }
@@ -64,7 +74,7 @@ def tara() -> list[dict]:
             "olcumler": olcumler,
             # Karar cozunurlugu: esikten en az bu kadar uzakta olan bir kusur
             # karara baglanabilir. k=2 guvenlik payindan geliyor.
-            "karar_cozunurlugu_derece": round(VARSAYILAN_K * valgus.belirsizlik, 3),
+            "karar_cozunurlugu_derece": _yuvarla(VARSAYILAN_K * valgus.belirsizlik),
             "valgus_karari": str(valgus.karar),
         })
     return satirlar
@@ -87,7 +97,8 @@ def cizim(satirlar: list[dict], hedef: Path) -> None:
                label=f"valgus eşiği ({ESIK:.0f}°)")
 
     for ad in adlar:
-        y = [s["olcumler"][ad]["belirsizlik_derece"] for s in satirlar]
+        y = [np.nan if s["olcumler"][ad]["belirsizlik_derece"] is None
+             else s["olcumler"][ad]["belirsizlik_derece"] for s in satirlar]
         ax.plot(x, y, marker="o", ms=4, label=ad.replace("_", " "))
 
     ax.axhspan(DOYGUNLUK_DERECE, 1e4, color="#888", alpha=0.10)

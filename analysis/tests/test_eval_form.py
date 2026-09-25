@@ -13,6 +13,7 @@ from eval.form import (
     VARSAYILAN_ESIKLER, Esik, Karar, form_degerlendir, govde_cercevesi,
     sentetik_durus,
 )
+from pose3d.iskelet import Iskelet3B
 
 
 def _deger(rapor, ad):
@@ -312,3 +313,56 @@ def test_eklem_kovaryanslari_listesi_dogrudan_verilebilir():
 def test_bozuk_kovaryans_reddedilir(bozuk, mesaj):
     with pytest.raises(ValueError, match=mesaj):
         form_degerlendir(sentetik_durus(), konum_belirsizligi_m=bozuk)
+
+
+# --- 0014: bukulmeye dayanikli valgus ----------------------------------------
+
+def _bukulmus(bukulme_derece: float, medial_m: float = 0.0) -> Iskelet3B:
+    """Iki bacak da diz bukulmesiyle comelmis durus (sagittal duzlemde, y yukari).
+
+    Uyluk one, baldir geriye egilir; ayak bilegi kalcanin altinda kalir. Istenirse
+    sag diz orta hatta `medial_m` kaydirilir (valgus).
+    """
+    d = sentetik_durus()
+    P = d.noktalar.copy()
+    i = d.tanim.indeks
+    yari = np.radians(bukulme_derece / 2.0)
+    for taraf in ("sag", "sol"):
+        h = P[i(f"{taraf}_kalca")]
+        k = h + 0.425 * np.array([0.0, -np.cos(yari), np.sin(yari)])
+        P[i(f"{taraf}_diz")] = k
+        P[i(f"{taraf}_ayak_bilegi")] = k + 0.425 * np.array([0.0, -np.cos(yari), -np.sin(yari)])
+    P[i("sag_diz")] += np.array([medial_m, 0.0, 0.0])
+    return Iskelet3B(tanim=d.tanim, noktalar=P, gorunur=d.gorunur.copy(),
+                     goren_kamera=d.goren_kamera.copy(), artik_px=d.artik_px.copy())
+
+
+@pytest.mark.parametrize("bukulme", [0.0, 30.0, 60.0, 90.0, 120.0])
+def test_saf_bukulme_valgus_uretmez(bukulme):
+    """EC3D'de eski tanim derin comelmede 78-84 derece veriyordu; yeni tanim 0."""
+    r = form_degerlendir(_bukulmus(bukulme))
+    for ad in ("diz_valgusu_sag", "diz_valgusu_sol"):
+        assert r.olcumler[ad].deger == pytest.approx(0.0, abs=1e-9)
+        assert r.olcumler[ad].karar is Karar.DOGRU
+
+
+def test_bukulmede_orta_hatta_kacis_valgus_olarak_olculur():
+    """Ayni medial kacis bukulmede de valgus olarak gorunur; isaret orta hat."""
+    duz = form_degerlendir(_bukulmus(90.0, medial_m=0.0)).olcumler["diz_valgusu_sag"].deger
+    ice = form_degerlendir(_bukulmus(90.0, medial_m=0.12)).olcumler["diz_valgusu_sag"]
+    disa = form_degerlendir(_bukulmus(90.0, medial_m=-0.12)).olcumler["diz_valgusu_sag"]
+    assert duz == pytest.approx(0.0, abs=1e-9)
+    assert ice.deger > 10.0 and ice.karar is Karar.KUSURLU
+    assert disa.deger < -10.0 and disa.karar is Karar.DOGRU
+
+
+def test_anatomik_olarak_imkansiz_bacakta_valgus_olculmez():
+    """Uyluk/baldir orani (0,5-2,0) disinda olcum NaN, karar BELIRSIZ."""
+    d = sentetik_durus(valgus_sag=15.0)
+    P = d.noktalar.copy()
+    i = d.tanim.indeks
+    P[i("sag_ayak_bilegi")] = P[i("sag_diz")] + 0.3 * (P[i("sag_ayak_bilegi")] - P[i("sag_diz")])
+    bozuk = Iskelet3B(tanim=d.tanim, noktalar=P, gorunur=d.gorunur.copy(),
+                      goren_kamera=d.goren_kamera.copy(), artik_px=d.artik_px.copy())
+    o = form_degerlendir(bozuk).olcumler["diz_valgusu_sag"]
+    assert np.isnan(o.deger) and o.karar is Karar.BELIRSIZ

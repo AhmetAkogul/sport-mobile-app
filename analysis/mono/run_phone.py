@@ -16,6 +16,7 @@ import math
 import time
 from pathlib import Path
 
+import cv2
 import numpy as np
 
 from capture.alignment import file_sha256
@@ -59,7 +60,9 @@ def load_lengths(path):
 
 
 def run(video, model, output, K, lengths, max_frames=300, *, backend="mediapipe",
-        detector=None, threshold=None):
+        detector=None, threshold=None, yontem="geometri"):
+    if yontem not in ("geometri", "mediapipe_world") or (yontem == "mediapipe_world" and backend != "mediapipe"):
+        raise ValueError("3B yontem/backend uyusmuyor")
     if type(max_frames) is not int or max_frames <= 0:
         raise ValueError("max_frames pozitif tamsayı olmalı.")
     video = Path(video).resolve()
@@ -75,7 +78,9 @@ def run(video, model, output, K, lengths, max_frames=300, *, backend="mediapipe"
     rapor = {"status": "running", "input": str(video), "input_sha256": file_sha256(video),
              "frames": 0, "physical_validation": False, "frame_limit": max_frames,
              "backend": backend,
-             "coordinate_space": "telefon kamerasi (ozgun piksel -> metre)",
+             "yontem_3d": yontem,
+             "coordinate_space": ("telefon kamerasi (ozgun piksel -> metre)" if yontem == "geometri"
+                                  else "MediaPipe kalca merkezli metre; mutlak kamera konumu degil"),
              "tespit_politikasi": "eksik eklem NaN, JSON'da null"}
     _write_json(output / "summary.json", rapor)
 
@@ -104,21 +109,32 @@ def run(video, model, output, K, lengths, max_frames=300, *, backend="mediapipe"
                     ok, image = handle.retrieve()
                     if not ok:
                         raise ValueError("Video karesi çözülemedi.")
-                    yield KareKaydi(i, image, kamera_id="telefon")
+                    # Kodekin video PTS'si; sensor pozlama zamani degildir.
+                    pts = handle.get(cv2.CAP_PROP_POS_MSEC) if hasattr(handle, "get") else float("nan")
+                    yield KareKaydi(i, image, zaman_ms=pts if math.isfinite(pts) and pts >= 0 else None,
+                                    kamera_id="telefon")
 
-            sonuc = hatti_kostur(kareler(), estimator, K, lengths)
+            sonuc = hatti_kostur(kareler(), estimator, K, lengths, yontem=yontem)
             rapor["stop_reason"] = rapor.get("stop_reason", "frame_limit")
 
             rows = []
             for i, (poz, skel) in enumerate(zip(sonuc.pozlar, sonuc.iskeletler)):
                 rows.append({
                     "frame_index": i,
+                    "zaman_ms": poz.ek.get("zaman_ms"), "zaman_kaynagi": "video_pts",
                     "tespit": bool(poz.tespit),
                     "points_px": json_uyumlu(poz.noktalar),
                     "confidence": json_uyumlu(poz.guven),
                     "visible": poz.gorunur.tolist(),
                     "points_3d_m": json_uyumlu(skel.noktalar),
                     "visible_3d": skel.gorunur.tolist(),
+                    "birim_3d": skel.birim, "cerceve_3d": skel.cerceve,
+                    "kaynak_3d": skel.kaynak,
+                    "kovaryans": json_uyumlu(skel.kovaryans),
+                    "belirsizlik_durumu": skel.belirsizlik_durumu,
+                    "belirsizlik_kaynagi": skel.belirsizlik_kaynagi,
+                    "world_points_m": json_uyumlu(poz.ek.get("world_points_m")),
+                    "world_visible": poz.ek.get("world_visible"),
                     "artik_px": json_uyumlu(skel.artik_px),
                     # Atlanan kemikler + derinlik sacilimi: hata analizinde
                     # "bu eklem neden dustu / derinligi ne kadar guvenilir".
@@ -158,11 +174,12 @@ def main():
     p.add_argument("--backend", choices=("mediapipe", "rtmpose"), default="mediapipe")
     p.add_argument("--detector", default=None, help="rtmpose için YOLOX dedektör modeli")
     p.add_argument("--threshold", type=float, default=None)
+    p.add_argument("--yontem", choices=("geometri", "mediapipe_world"), default="geometri")
     a = p.parse_args()
     print(json.dumps(run(a.video, a.model, a.output,
                          json.loads(Path(a.intrinsics).read_text(encoding="utf-8")),
                          load_lengths(a.lengths), a.max_frames,
-                         backend=a.backend, detector=a.detector, threshold=a.threshold),
+                         backend=a.backend, detector=a.detector, threshold=a.threshold, yontem=a.yontem),
                      ensure_ascii=False, indent=2))
 
 

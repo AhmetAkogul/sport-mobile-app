@@ -205,6 +205,7 @@ def tek_gorus_3b(
     gorunur = goren.astype(bool)
     return Iskelet3B(tanim=tanim, noktalar=noktalar3, gorunur=gorunur,
                      goren_kamera=goren, artik_px=artik,
+                     cerceve="telefon_kamera", kaynak="kemik_onculu_geometri",
                      ek={"atlanan_kemikler": atlanan, "derinlik_sacilimi_m": sacilim})
 
 
@@ -219,6 +220,7 @@ def hatti_kostur(
     uzunluklar_m: UzunlukOnculeri,
     tanim: IskeletTanimi = REFERANS_ISKELET,
     guven_esigi: float | None = None,
+    *, yontem: str = "geometri",
 ) -> TelefonSonucu:
     """Kayittan 3B iskelete kadar telefon hatti.
 
@@ -234,6 +236,8 @@ def hatti_kostur(
       sifira duser). `guven_esigi` verilirse ek bir **daraltma** olarak
       uygulanir; nokta silinmez, maskelenir.
     """
+    if yontem not in ("geometri", "mediapipe_world"):
+        raise ValueError("bilinmeyen 3B yontem")
     pozlar: list[Poz2B] = []
     iskeletler: list[Iskelet3B] = []
     for kayit in kareler:
@@ -249,7 +253,13 @@ def hatti_kostur(
         if guven_esigi is not None:
             poz = poz.guven_esikle(guven_esigi)
         pozlar.append(poz)
-        iskeletler.append(tek_gorus_3b(poz, K, uzunluklar_m, tanim=tanim))
+        if yontem == "mediapipe_world":
+            if tanim != REFERANS_ISKELET:
+                raise ValueError("world tabani bitirme-13 gerektirir")
+            from mono.world import dunya_iskeleti
+            iskeletler.append(dunya_iskeleti(poz))
+        else:
+            iskeletler.append(tek_gorus_3b(poz, K, uzunluklar_m, tanim=tanim))
     return TelefonSonucu(pozlar=pozlar, iskeletler=iskeletler, tanim=tanim)
 
 

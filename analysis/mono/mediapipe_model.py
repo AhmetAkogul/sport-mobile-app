@@ -9,7 +9,7 @@ import cv2
 import numpy as np
 
 from capture.alignment import file_sha256
-from pose3d.adaptorler import mediapipe_poz2b
+from pose3d.adaptorler import mediapipe_poz2b, mediapipe_dunya_noktalari
 from pose3d.iskelet import REFERANS_ISKELET
 from pose3d.pose2d import Poz2B
 
@@ -97,8 +97,15 @@ class MediaPipeEstimator:
         rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
         result = self._detector.detect(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb))
         pose = result_to_pose(result, (width, height), model=self.model_id, threshold=self.threshold)
+        world = getattr(result, "pose_world_landmarks", [])
+        extra = {}
+        if pose.tespit and len(world) == 1:
+            xyz, _, visible = mediapipe_dunya_noktalari(world[0], guven_esigi=self.threshold)
+            visible = visible & pose.gorunur
+            xyz[~visible] = np.nan
+            extra = {"world_points_m": xyz.tolist(), "world_visible": visible.tolist()}
         # `replace`: Poz2B frozen; `ek.update` yerine yeni bir kopya uretilir.
-        return replace(pose, ek={**pose.ek, "model_sha256": self.sha256,
+        return replace(pose, ek={**pose.ek, **extra, "model_sha256": self.sha256,
                                  "running_mode": "IMAGE", "device": "CPU"})
 
     def close(self):

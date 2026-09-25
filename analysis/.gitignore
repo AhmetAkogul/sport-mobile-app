@@ -1,5 +1,6 @@
 # --- VERI: asla git'e girmez ---
 data/
+/data
 *.mp4
 *.avi
 *.mov

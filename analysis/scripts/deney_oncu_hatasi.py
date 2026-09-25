@@ -39,6 +39,10 @@ TOHUM = 20260922
 VALGUS = "diz_valgusu_sag"
 
 
+def _yuvarla(x: float, basamak: int) -> float | None:
+    return round(float(x), basamak) if np.isfinite(x) else None
+
+
 def duruslar_uret() -> list:
     rng = np.random.default_rng(TOHUM)
     return [
@@ -112,9 +116,10 @@ def main() -> None:
                 {
                     "aci_derece": n.aci_derece,
                     "dogruluk": round(n.sayimlar[VALGUS].dogruluk, 4),
-                    "yanlis_karar_orani": round(
+                    # Karar/olcum yoksa (yandan bakis, 0014) tanimsiz: None.
+                    "yanlis_karar_orani": _yuvarla(
                         n.sayimlar[VALGUS].yanlis_karar_orani, 4),
-                    "aci_hatasi_derece": round(n.aci_hatasi_derece[VALGUS], 3),
+                    "aci_hatasi_derece": _yuvarla(n.aci_hatasi_derece[VALGUS], 3),
                 }
                 for n in sonuc.noktalar
             ],

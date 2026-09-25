@@ -155,7 +155,9 @@ def mediapipe_dunya_noktalari(world_landmarks, guven_esigi: float = 0.5):
 
     **Bunlar telefonun kendi 3B kestirimidir** ve tezin olctugu sey tam olarak
     budur (`docs/kararlar/0006`). Duzenek ciktisiyla karsilastirirken dogrudan
-    konum farki alinamaz; rijit hizalama gerekir (`pose3d.hizalama.rijit_hizala`).
+    konum farki alinamaz. Birincil degerlendirmede donusum bagimsiz kurulumdan
+    gelmelidir; test pozuna kare basina rijit hizalama yalniz ikincil sekil
+    tanisidir, mutlak konum basarisi sayilmaz (0070).
 
     Koordinat sistemi (MediaPipe belgesine gore, mediapipe 1.0.1):
 

@@ -109,7 +109,8 @@ def cizim(satirlar: list[dict], hedef: Path) -> None:
 
     ust.plot(x, [s["bilmeyen"]["dogruluk"] for s in satirlar],
              marker="o", color="#1f77b4", label="doğru karar oranı")
-    ust.plot(x, [s["bilmeyen"]["yanlis_karar_orani"] for s in satirlar],
+    ust.plot(x, [np.nan if s["bilmeyen"]["yanlis_karar_orani"] is None
+                 else s["bilmeyen"]["yanlis_karar_orani"] for s in satirlar],
              marker="s", color="#d62728",
              label="yanlış karar oranı (karar verilenler içinde)")
     ust.plot(x, [s["bilen"]["karar_verilen_oran"] for s in satirlar],
@@ -165,7 +166,9 @@ def main() -> None:
             "sekil_hatasi_mm": round(sigma_m * 1000.0, 1),
             "bilmeyen": {
                 "dogruluk": round(a.dogruluk, 4),
-                "yanlis_karar_orani": round(a.yanlis_karar_orani, 4),
+                # Hic karar verilmediyse oran tanimsiz (0070): None.
+                "yanlis_karar_orani": (None if not np.isfinite(a.yanlis_karar_orani)
+                                       else round(a.yanlis_karar_orani, 4)),
                 "yanlis": a.yanlis, "belirsiz": a.belirsiz,
                 "kacirma": a.kacirma, "yanlis_alarm": a.yanlis_alarm,
             },

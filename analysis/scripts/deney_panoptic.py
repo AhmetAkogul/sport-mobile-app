@@ -91,6 +91,8 @@ def main() -> None:
     p.add_argument("--adim", type=int, default=30)
     p.add_argument("--esik", type=float, default=None,
                    help="guven esigi (varsayilan modele gore); duyarlilik icin")
+    p.add_argument("--saglam", action="store_true", help="aykiri gorus uzlasmasi; ayri deney kolu")
+    p.add_argument("--artik-esigi", type=float, default=8.0)
     a = p.parse_args()
 
     pk = kalibrasyon_oku(DIZI / "calibration_171204_pose1.json", KAMERALAR)
@@ -104,6 +106,8 @@ def main() -> None:
     hata3b: list[float] = []
     eklem3b: dict[str, list[float]] = {e: [] for e in REFERANS_ISKELET.eklemler}
     ucgenlenen: list[float] = []
+    ortak_ham, ortak_saglam = [], []
+    kabul_gorusleri = []
     tani: list[dict] = []
     kadraj_disi = {"gt_disarida": 0, "model_gorunur_dedi": 0}
     # RTMPose dedektoru kubbedeki birden fazla kisiyi bulabiliyor; en buyuk kutu
@@ -156,7 +160,16 @@ def main() -> None:
                                  "medyan_px": round(float(np.median(fark)), 1),
                                  "ayna_medyan_px": ayna_medyan,
                                  "bulunan_kisi": int(poz.ek.get("bulunan_kisi", 1))})
-            isk = iskelet_ucgenle(pk.kalib, gozlem, REFERANS_ISKELET)
+            isk = iskelet_ucgenle(pk.kalib, gozlem, REFERANS_ISKELET,
+                                  saglam=a.saglam, esik_px=a.artik_esigi,
+                                  sigma_px=1.0 if a.saglam else None)
+            if a.saglam:
+                ham = iskelet_ucgenle(pk.kalib, gozlem, REFERANS_ISKELET)
+                ortak_maske = g_ref & isk.gorunur & ham.gorunur
+                ortak_ham.extend((np.linalg.norm(ham.noktalar[ortak_maske]-P_ref[ortak_maske], axis=1)*1000).tolist())
+                ortak_saglam.extend((np.linalg.norm(isk.noktalar[ortak_maske]-P_ref[ortak_maske], axis=1)*1000).tolist())
+                kabul_gorusleri.append({"kare": k, "kameralar": isk.ek["kullanilan_kameralar"],
+                                        "nedenler": isk.ek["red_nedenleri"]})
             sec = g_ref & isk.gorunur
             ucgenlenen.append(float(sec.sum()) / float(g_ref.sum()))
             d = np.linalg.norm(isk.noktalar[sec] - P_ref[sec], axis=1) * 1000.0
@@ -167,6 +180,10 @@ def main() -> None:
     sonuc = {
         "deney": "panoptic_171204_pose1", "backend": a.backend, "model": model_id,
         "kameralar": KAMERALAR,
+        "saglam": a.saglam, "artik_esigi_px": a.artik_esigi if a.saglam else None,
+        "ortak_kumede_ham_mm": _ozet(ortak_ham),
+        "ortak_kumede_saglam_mm": _ozet(ortak_saglam),
+        "kabul_gorusleri": kabul_gorusleri,
         "kareler": {"ilk": a.ilk, "son": a.son, "adim": a.adim,
                     "tek_kisilik": len(tek), "kullanilan": len(ortak)},
         "referans": "Panoptic hdPose3d_stage1_coco19 (480 VGA + 31 HD'den; bizden bagimsiz)",
@@ -190,6 +207,8 @@ def main() -> None:
         },
     }
     ek_ad = "" if a.esik is None else f"_esik{a.esik:g}"
+    if a.saglam:
+        ek_ad += f"_saglam{a.artik_esigi:g}"
     cikti = KOK / "out" / f"panoptic_{a.backend}{ek_ad}.json"
     cikti.parent.mkdir(exist_ok=True)
     cikti.write_text(json.dumps(sonuc, ensure_ascii=False, indent=2, allow_nan=False),

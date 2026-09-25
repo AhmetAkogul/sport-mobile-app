@@ -36,6 +36,8 @@ import numpy as np
 
 from capture.record import _write_json
 from eval.form import Karar, form_degerlendir
+from eval.egzersiz import kare_degerlendir
+from eval.tekrar import SquatTakip
 from mono import run_phone
 from mono.phone import json_uyumlu
 from pose3d.iskelet import REFERANS_ISKELET, Iskelet3B
@@ -59,7 +61,13 @@ def satirdan_iskelet(satir: dict) -> Iskelet3B:
     gorunur = np.array(satir["visible_3d"], dtype=bool)
     return Iskelet3B(tanim=REFERANS_ISKELET, noktalar=noktalar, gorunur=gorunur,
                      goren_kamera=gorunur.astype(int),
-                     artik_px=np.full(len(REFERANS_ISKELET), np.nan))
+                     artik_px=np.full(len(REFERANS_ISKELET), np.nan),
+                     birim=satir.get("birim_3d", "metre"),
+                     cerceve=satir.get("cerceve_3d", "telefon_kamera"),
+                     kaynak=satir.get("kaynak_3d", "eski_telefon_kaydi"),
+                     kovaryans=satir.get("kovaryans"),
+                     belirsizlik_durumu=satir.get("belirsizlik_durumu", "dogrulanmadi"),
+                     belirsizlik_kaynagi=satir.get("belirsizlik_kaynagi", "bilinmiyor"))
 
 
 def _ciz(image: np.ndarray, satir: dict, yalin, bilen) -> np.ndarray:
@@ -75,7 +83,7 @@ def _ciz(image: np.ndarray, satir: dict, yalin, bilen) -> np.ndarray:
         if g:
             cv2.circle(out, tuple(int(round(v)) for v in p), 4, (255, 255, 255), -1, cv2.LINE_AA)
     olcek = max(0.4, out.shape[1] / 1600)
-    for i, (baslik, rapor) in enumerate((("Yalin esik", yalin), ("Belirsizligi bilen", bilen))):
+    for i, (baslik, rapor) in enumerate((("Deney: yalin esik", yalin), ("Deney: varsayimsal bant", bilen))):
         karar = rapor.genel_karar
         metin = f"{baslik}: {_ETIKET[karar]}"
         if rapor.kusurlar:
@@ -84,11 +92,13 @@ def _ciz(image: np.ndarray, satir: dict, yalin, bilen) -> np.ndarray:
         cv2.putText(out, metin, (12, y), cv2.FONT_HERSHEY_SIMPLEX, olcek, (0, 0, 0), 4, cv2.LINE_AA)
         cv2.putText(out, metin, (12, y), cv2.FONT_HERSHEY_SIMPLEX, olcek, _RENK[karar], 2,
                     cv2.LINE_AA)
+    cv2.putText(out, "Form guvenilirligi dogrulanmadi", (12, out.shape[0]-15),
+                cv2.FONT_HERSHEY_SIMPLEX, olcek, (255, 255, 255), 1, cv2.LINE_AA)
     return out
 
 
 def run(video, model, output, K, lengths, *, max_frames=300, backend="mediapipe",
-        detector=None, threshold=None,
+        detector=None, threshold=None, yontem="geometri",
         konum_belirsizligi_m: float = VARSAYILAN_KONUM_BELIRSIZLIGI_M) -> dict:
     if not (isinstance(konum_belirsizligi_m, (int, float))
             and math.isfinite(konum_belirsizligi_m) and konum_belirsizligi_m > 0):
@@ -99,12 +109,16 @@ def run(video, model, output, K, lengths, *, max_frames=300, backend="mediapipe"
     output.mkdir(parents=True)
 
     hat = run_phone.run(video, model, output / "hat", K, lengths, max_frames,
-                        backend=backend, detector=detector, threshold=threshold)
+                        backend=backend, detector=detector, threshold=threshold, yontem=yontem)
     satirlar = [json.loads(s) for s in
                 (output / "hat" / "results.jsonl").read_text(encoding="utf-8").splitlines()]
 
     yalin_say, bilen_say, kusur_say = Counter(), Counter(), Counter()
     raporlar = []
+    takip = SquatTakip()
+    zamanlar = [s.get("zaman_ms") for s in satirlar]
+    zaman_gecerli = bool(zamanlar) and all(z is not None and math.isfinite(z) and z >= 0 for z in zamanlar)
+    zaman_gecerli = zaman_gecerli and all(b > a for a, b in zip(zamanlar, zamanlar[1:]))
     with (output / "form.jsonl").open("x", encoding="utf-8") as f:
         for satir in satirlar:
             iskelet = satirdan_iskelet(satir)
@@ -114,9 +128,13 @@ def run(video, model, output, K, lengths, *, max_frames=300, backend="mediapipe"
             yalin_say[str(yalin.genel_karar)] += 1
             bilen_say[str(bilen.genel_karar)] += 1
             kusur_say.update(yalin.kusurlar)
+            kullanici = kare_degerlendir(iskelet)
+            evre = takip.ekle(satir["zaman_ms"] / 1000, kullanici) if zaman_gecerli else {
+                "evre": "bilinmiyor", "sonuc": None}
             f.write(json.dumps(json_uyumlu({
                 "frame_index": satir["frame_index"], "tespit": satir["tespit"],
-                "yalin_esik": yalin.ozet(), "belirsizligi_bilen": bilen.ozet()}),
+                "yalin_esik": yalin.ozet(), "belirsizligi_bilen": bilen.ozet(),
+                "kullanici_degerlendirmesi": kullanici, "hareket": evre}),
                 ensure_ascii=False, allow_nan=False) + "\n")
 
     cap = cv2.VideoCapture(str(Path(video).resolve()))
@@ -153,6 +171,10 @@ def run(video, model, output, K, lengths, *, max_frames=300, backend="mediapipe"
         "belirsizligi_bilen_kararlari": dict(bilen_say),
         "yalin_esigin_buldugu_kusurlar": dict(kusur_say),
         "physical_validation": False,
+        "yontem_3d": yontem,
+        "tekrarlar": takip.bitir(),
+        "tekrar_zamani_durumu": "video_pts" if zaman_gecerli else "gecersiz_veya_eksik_zaman",
+        "kullanici_karari": "belirsizlik_dogrulanmadi",
         "not": ("Tek gorus 3B; duzeltme katmani yok. 'Degerlendirilemiyor' bir "
                 "ariza degil, olcum hatasinin karar sinirini astigi anlamina gelir."),
     }
@@ -171,6 +193,7 @@ def main():
     p.add_argument("--backend", choices=("mediapipe", "rtmpose"), default="mediapipe")
     p.add_argument("--detector", default=None)
     p.add_argument("--threshold", type=float, default=None)
+    p.add_argument("--yontem", choices=("geometri", "mediapipe_world"), default="geometri")
     p.add_argument("--konum-belirsizligi-m", type=float,
                    default=VARSAYILAN_KONUM_BELIRSIZLIGI_M,
                    help="eklem konum belirsizligi, metre (varsayilan: tek gorus model hatasi)")
@@ -178,7 +201,7 @@ def main():
     print(json.dumps(run(a.video, a.model, a.output,
                          json.loads(Path(a.intrinsics).read_text(encoding="utf-8")),
                          run_phone.load_lengths(a.lengths), max_frames=a.max_frames,
-                         backend=a.backend, detector=a.detector, threshold=a.threshold,
+                         backend=a.backend, detector=a.detector, threshold=a.threshold, yontem=a.yontem,
                          konum_belirsizligi_m=a.konum_belirsizligi_m),
                      ensure_ascii=False, indent=2))
 

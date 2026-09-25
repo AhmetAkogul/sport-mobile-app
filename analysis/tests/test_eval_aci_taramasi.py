@@ -55,7 +55,8 @@ def test_aci_hatasi_yandan_bakista_buyuyor():
     """Karar bozulmadan once olculen aci bozulur; ikisi ayri ayri izlenmeli."""
     uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
     sonuc = aci_taramasi(_duruslar(), ACILAR, uret, K)
-    assert _hata(sonuc, 90.0) > 10.0 * _hata(sonuc, 0.0)
+    # 90 derecede kestirim anatomik olarak imkansiz (olcum NaN); egim 60'ta olculur.
+    assert _hata(sonuc, 60.0) > 5.0 * _hata(sonuc, 0.0)
 
 
 def test_sayimlar_toplami_durus_sayisina_esit():
@@ -137,13 +138,13 @@ def test_belirsizlik_bilinince_yanlis_karar_yerine_susuluyor():
     """
     duruslar = _duruslar()
     uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
-    bilmeyen = aci_taramasi(duruslar, [90.0], uret, K)
+    bilmeyen = aci_taramasi(duruslar, [60.0], uret, K)
 
     uret2, K2 = sentetik_poz_ureteci(gurultu_px=0.0)
-    bilen = aci_taramasi(duruslar, [90.0], uret2, K2, konum_belirsizligi_m=0.05)
+    bilen = aci_taramasi(duruslar, [60.0], uret2, K2, konum_belirsizligi_m=0.05)
 
-    assert _sayim(bilen, 90.0).yanlis < _sayim(bilmeyen, 90.0).yanlis
-    assert _sayim(bilen, 90.0).belirsiz > _sayim(bilmeyen, 90.0).belirsiz
+    assert _sayim(bilen, 60.0).yanlis < _sayim(bilmeyen, 60.0).yanlis
+    assert _sayim(bilen, 60.0).belirsiz > _sayim(bilmeyen, 60.0).belirsiz
 
 
 # --- rapor -------------------------------------------------------------------
@@ -213,8 +214,8 @@ def test_bozuk_k_reddedilir():
 def test_yanlis_karar_kacirma_ve_yanlis_alarm_olarak_ayrilir():
     """Yanlis = kacirma + yanlis alarm; iki tur ayri raporlanir."""
     uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
-    sonuc = aci_taramasi(_duruslar(), [90.0], uret, K)
-    s = _sayim(sonuc, 90.0)
+    sonuc = aci_taramasi(_duruslar(), [60.0], uret, K)
+    s = _sayim(sonuc, 60.0)
     assert s.yanlis > 0                                  # yandan bakista hata var
     assert s.kacirma + s.yanlis_alarm == s.yanlis
     assert s.kacirma_orani + s.yanlis_alarm_orani == pytest.approx(s.yanlis_karar_orani)
@@ -245,3 +246,15 @@ def test_0070_matrisi_eski_sayaclarla_tutarli():
                                           s.referanssiz, s.toplam)
     o = m.oranlar()
     assert o["Y"] == pytest.approx(s.dogruluk)      # Y = C/N; burada R = 0
+
+
+def test_yandan_imkansiz_geometride_valgus_karari_verilmez():
+    """90 derecede tek gorus uylugu ~2 m kuruyor; valgus kesin karar uretmemeli.
+
+    Bukulmeye dayanikli valgus (0014) boyle bir geometriden -95 derece gibi bir
+    deger cikarir ve yalin esik ona guvenle "dogru" derdi. Uyluk/baldir orani
+    kontrolu olcumu NaN yapar; karar BELIRSIZ olur.
+    """
+    uret, K = sentetik_poz_ureteci(gurultu_px=0.0)
+    s = _sayim(aci_taramasi(_duruslar(), [90.0], uret, K), 90.0)
+    assert s.belirsiz == len(_duruslar()) and s.yanlis == 0

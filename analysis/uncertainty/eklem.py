@@ -40,6 +40,9 @@ def eklem_kovaryanslari(
     gorunur isaretli eklemler icin hesap yapilir, boylece bu modul ile
     `pose3d/iskelet.py` arasinda ikinci bir gorunurluk mantigi olusmaz.
     """
+    iskelet.metrik_gerekli()
+    if iskelet.cerceve != "kamera0":
+        raise ValueError("kalibrasyon kovaryansi kamera0 cercevesi gerektirir")
     tanim = iskelet.tanim
     P_hepsi = kalibrasyondan_projeksiyonlar(kalib)
     haritalar = {k: (poz, eslestir(poz.iskelet, tanim))
@@ -52,6 +55,9 @@ def eklem_kovaryanslari(
             continue
         projeksiyonlar = []
         for kamera, (poz, harita) in haritalar.items():
+            kullanilan = iskelet.ek.get("kullanilan_kameralar")
+            if kullanilan is not None and kamera not in kullanilan.get(tanim.eklemler[j], []):
+                continue
             k = harita[j]
             if k >= 0 and poz.gorunur[k] and kamera < len(P_hepsi):
                 projeksiyonlar.append(P_hepsi[kamera])
@@ -76,7 +82,7 @@ def eklem_belirsizligi(
     hesap gerekiyorsa `eklem_kovaryanslari` kullanilmali.
 
     NaN dondurmek kasitli: `form_degerlendir` NaN belirsizligi "bilinmiyor"
-    sayip yalin esik karsilastirmasina duser. Sifir dondurulseydi hesaplanamayan
+    sayip BELIRSIZ verir. Sifir dondurulseydi hesaplanamayan
     eklem **kusursuz olcum** gibi gorunurdu.
     """
     return np.array([

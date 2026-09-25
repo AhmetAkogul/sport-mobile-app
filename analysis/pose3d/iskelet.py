@@ -91,14 +91,29 @@ class Iskelet3B:
     """
 
     tanim: IskeletTanimi
-    noktalar: np.ndarray          # (N, 3) metre, kamera 0 koordinatinda
+    noktalar: np.ndarray          # (N, 3); birim ve cerceve alanlari belirler
     gorunur: np.ndarray           # (N,) bool
     goren_kamera: np.ndarray      # (N,) int -- eklem basina kac kamera gordu
     artik_px: np.ndarray          # (N,) yeniden izdusum artigi
     ek: dict = field(default_factory=dict)   # hat/uretici kaynakli ek bilgi
+    birim: str = "metre"
+    cerceve: str = "kamera0"
+    kaynak: str = "belirtilmedi"
+    kovaryans: np.ndarray | None = None  # (N,3,3), birim^2; eksik eklem NaN
+    belirsizlik_kaynagi: str = "bilinmiyor"
+    belirsizlik_durumu: str = "dogrulanmadi"
 
     def __post_init__(self) -> None:
         n = len(self.tanim)
+        if self.birim not in ("metre", "normalize"):
+            raise ValueError("birim metre veya normalize olmali")
+        if not self.cerceve or not self.kaynak:
+            raise ValueError("cerceve ve kaynak bos olamaz")
+        if self.belirsizlik_durumu not in ("dogrulanmadi", "kosullu", "kalibre"):
+            raise ValueError("gecersiz belirsizlik_durumu")
+        if self.belirsizlik_durumu == "kalibre" and (
+                self.kovaryans is None or self.belirsizlik_kaynagi == "bilinmiyor"):
+            raise ValueError("kalibre belirsizlik kovaryans ve kaynak gerektirir")
         noktalar = np.asarray(self.noktalar, dtype=np.float64)
         if noktalar.shape != (n, 3):
             raise ValueError(
@@ -125,12 +140,28 @@ class Iskelet3B:
                 "gorunmez eklem deger tasiyor (NaN beklenir): "
                 f"{[self.tanim.eklemler[i] for i in np.flatnonzero(fazla)]}")
         object.__setattr__(self, "noktalar", noktalar)
+        if self.kovaryans is not None:
+            cov = np.asarray(self.kovaryans, dtype=float)
+            if cov.shape != (n, 3, 3):
+                raise ValueError("kovaryans (N,3,3) olmali")
+            for c in cov:
+                if np.isnan(c).all():
+                    continue
+                if (not np.isfinite(c).all() or not np.allclose(c, c.T, atol=1e-12)
+                        or np.linalg.eigvalsh(c).min() < -1e-12):
+                    raise ValueError("kovaryans sonlu, simetrik ve PSD olmali")
+            self.kovaryans = cov
+
+    def metrik_gerekli(self) -> None:
+        if self.birim != "metre":
+            raise ValueError("metrik islem metre gerektirir; normalize iskelet verildi")
 
     def al(self, eklem: str) -> np.ndarray:
         return self.noktalar[self.tanim.indeks(eklem)]
 
     def uzunluk(self, a: str, b: str) -> float:
         """Iki eklem arasi mesafe (metre). Biri gorunmuyorsa NaN."""
+        self.metrik_gerekli()
         ia, ib = self.tanim.indeks(a), self.tanim.indeks(b)
         if not (self.gorunur[ia] and self.gorunur[ib]):
             return float("nan")
@@ -168,6 +199,7 @@ def iskelet_ucgenle(
     tanim: IskeletTanimi = REFERANS_ISKELET,
     min_gorus: int = 2,
     bozulma_giderildi: bool = False,
+    *, saglam: bool = False, esik_px: float = 8.0, sigma_px: float | None = None,
 ) -> Iskelet3B:
     """Kamera basina 2B pozdan 3B iskelet.
 
@@ -186,6 +218,8 @@ def iskelet_ucgenle(
     gorunur = np.zeros(n, dtype=bool)
     goren = np.zeros(n, dtype=int)
     artik = np.full(n, np.nan)
+    kov = np.full((n, 3, 3), np.nan)
+    kullanilan, nedenler = {}, {}
 
     # Her kameranin pozu referans iskelete tasinir; indeks esitligi varsayilmaz.
     yerlesim: dict[int, tuple[object, np.ndarray]] = {}
@@ -198,16 +232,39 @@ def iskelet_ucgenle(
             k = harita[j]
             if k < 0 or not poz.gorunur[k]:
                 continue
+            if saglam:
+                w, h = poz.goruntu_boyutu
+                x, y = poz.noktalar[k]
+                if not (0 <= x < w and 0 <= y < h):
+                    continue
             eklem_gozlem[kamera] = poz.noktalar[k]
         goren[j] = len(eklem_gozlem)
         if len(eklem_gozlem) < max(2, min_gorus):
             continue
-        sonuc: Ucgenleme = ucgenle(kalib, eklem_gozlem, bozulma_giderildi)
+        if saglam:
+            from pose3d.saglam import ucgenle_saglam
+            secim = ucgenle_saglam(kalib, eklem_gozlem, esik_px=esik_px,
+                                   sigma_px=sigma_px, bozulma_giderildi=bozulma_giderildi)
+            kullanilan[tanim.eklemler[j]] = list(secim.kabul)
+            nedenler[tanim.eklemler[j]] = secim.neden
+            if secim.sonuc is None or len(secim.kabul) < max(2, min_gorus):
+                continue
+            sonuc = secim.sonuc
+        else:
+            sonuc: Ucgenleme = ucgenle(kalib, eklem_gozlem, bozulma_giderildi, sigma_px)
+            kullanilan[tanim.eklemler[j]] = sorted(eklem_gozlem)
         if not sonuc.gecerli:
             continue
         noktalar[j] = sonuc.nokta
         artik[j] = sonuc.artik_px
         gorunur[j] = True
+        if sonuc.kovaryans is not None:
+            kov[j] = sonuc.kovaryans
 
     return Iskelet3B(tanim=tanim, noktalar=noktalar, gorunur=gorunur,
-                     goren_kamera=goren, artik_px=artik)
+                     goren_kamera=goren, artik_px=artik, kaynak="ucgenleme",
+                     kovaryans=kov if sigma_px is not None else None,
+                     belirsizlik_kaynagi="tespit_gurultusu" if sigma_px else "bilinmiyor",
+                     belirsizlik_durumu="kosullu" if sigma_px else "dogrulanmadi",
+                     ek={"kullanilan_kameralar": kullanilan, "red_nedenleri": nedenler,
+                         "saglam": saglam, "esik_px": esik_px if saglam else None})

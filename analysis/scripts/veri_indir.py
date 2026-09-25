@@ -22,13 +22,14 @@ import hashlib
 import json
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
 KOK = Path(__file__).resolve().parent.parent
 HEDEF = KOK / "data" / "dis"
 ERISIMLER = ("dogrudan", "hesap", "basvuru")
-DENEME = 8          # kopan buyuk indirmeler icin surdurme denemesi
+DENEME = 60         # her deneme kaldigi yerden surer; kopma basina bir deneme
 
 # Rol kodlari: R=duzenek/referans dogrulama, T=telefon-referans eslesmesi (kopru),
 # F=form/kalite etiketi, B=biyomekanik/buyuk mocap, M=hazir model.
@@ -61,6 +62,43 @@ KATALOG: dict[str, dict] = {
         "url": "https://zenodo.org/records/7672767", "zenodo": "7672767",
         "lisans": "CC BY 4.0", "erisim": "dogrudan", "mb": 39100, "rol": "F",
         "not": "20 antrenman RGB videosu; IMU/iskelet verisi mmfit.github.io'da"},
+    "movi_f": {
+        "url": "https://www.biomotionlab.ca/movi/",
+        "dataverse": "doi:10.5683/SP2/JRHDRN",
+        # F turu: tam vucut mocap + 2 telefon (CP) + 2 sabit kamera (PG); ilk 8 kisi.
+        "secim": r"^(README\.pdf|Camera Parameters\.tar|F_AMASS\.tar|F_Subjects_1_45\.tar"
+                 r"|F_(CP1|CP2|PG1|PG2)_Subject_[1-8](_.*)?\.(mp4|avi))$",
+        "lisans": "ticari olmayan bilimsel arastirma (Dataverse kullanim kosullari)",
+        "erisim": "dogrudan", "mb": 12000, "rol": "R,T",
+        "not": "90 kisi, optik mocap; sabit kameralar kalibre + senkron (duzenek dogrulamasi). "
+               "Telefonlar elde, kalibresiz ve mocap ile SENKRON DEGIL; squat yok. "
+               "OpenCap'in yerini tutmaz. Tam veri 290 GB: F turu, ilk 8 kisi"},
+    "rehab24_6": {
+        "url": "https://zenodo.org/records/13305826", "zenodo": "13305826",
+        "lisans": "CC BY-NC 4.0", "erisim": "dogrudan", "mb": 5670, "rol": "R,T,F",
+        "not": "6 rehabilitasyon egzersizi (Ex6 = SQUAT), dogru + yanlis tekrar etiketi, "
+               "2 senkron RGB kamera + 41 marker optik mocap (26 eklem 3B + 2B izdusum), "
+               "tekrar bolutleme. Tek kamera + bagimsiz referans + form etiketi ayni kayitta"},
+    "ucophyrehab": {
+        "url": "https://zenodo.org/records/17935737",
+        "dosyalar": [f"https://zenodo.org/api/records/17935737/files/{d}/content"
+                     for d in ("dataset_3d_with_angles.json", "ucophyrehab2_data.jsonl",
+                               "samples.zip")],
+        "lisans": "CC BY 4.0", "erisim": "dogrudan", "mb": 557, "rol": "F",
+        "not": "cok gorunuslu rehabilitasyon; HAM RGB VIDEO YOK (gizlilik). Alinan: aciyla 3B "
+               "iskelet + ornekler; siluet/optik akis/segmentasyon (~9 GB) alinmadi"},
+    "knee_pad": {
+        "url": "https://zenodo.org/records/12112951", "zenodo": "12112951",
+        "lisans": "CC BY 4.0", "erisim": "dogrudan", "mb": 289, "rol": "F",
+        "not": "31 diz hastasi; squat, bacak uzatma, yurume -- dogru + 2 yanlis varyasyon; "
+               "EMG + IMU odakli (video yayimlanip yayimlanmadigi arsivden anlasilacak)"},
+    "ul_red": {
+        "url": "https://datacat.liverpool.ac.uk/2729/",
+        "dosyalar": [f"https://datacat.liverpool.ac.uk/2729/{i}/S{i:02d}.zip" for i in range(1, 11)]
+                    + ["https://datacat.liverpool.ac.uk/2729/11/code.zip"],
+        "lisans": "CC BY 4.0", "erisim": "dogrudan", "mb": 5600, "rol": "R",
+        "not": "10 kisi, 22 egzersiz (mini squat dahil), OptiTrack marker + markersiz iskelet + "
+               "derinlik; RGB video yok. Markerli vs markersiz karsilastirmasi"},
     "mediapipe_pose_lite": {
         "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
         "lisans": "Apache 2.0", "erisim": "dogrudan", "mb": 6, "rol": "M",
@@ -154,8 +192,29 @@ def _dosya_adresi_mi(url: str) -> bool:
     return "drive.google.com" not in url and "zenodo.org/records" not in url
 
 
-def _dosya_listesi(k: dict) -> list[str]:
-    """Kaynagin indirilecek dosya adresleri: tek url, acik liste ya da Zenodo kaydi."""
+def _dataverse_listesi(k: dict) -> list[tuple[str, str]]:
+    """Dataverse kaydindan `secim` desenine uyan (adres, dosya adi) ciftleri."""
+    import re
+    sonuc = subprocess.run(
+        ["curl", "--fail", "--silent", "--show-error",
+         f"https://borealisdata.ca/api/datasets/:persistentId/?persistentId={k['dataverse']}"],
+        capture_output=True, text=True)
+    if sonuc.returncode != 0:
+        raise ValueError(f"Dataverse listesi alinamadi: {sonuc.stderr.strip()}")
+    desen = re.compile(k["secim"])
+    dosyalar = json.loads(sonuc.stdout)["data"]["latestVersion"]["files"]
+    return [(f"https://borealisdata.ca/api/access/datafile/{f['dataFile']['id']}",
+             f["dataFile"]["filename"]) for f in dosyalar
+            if desen.match(f["dataFile"]["filename"]) and not f.get("restricted")]
+
+
+def _dosya_listesi(k: dict) -> list:
+    """Kaynagin indirilecek dosya adresleri: tek url, acik liste, Zenodo ya da Dataverse.
+
+    Oge ya adres ya da (adres, dosya adi) ciftidir (Dataverse adresi kimlik tasir).
+    """
+    if k.get("dataverse"):
+        return _dataverse_listesi(k)
     if k.get("dosyalar"):
         return list(k["dosyalar"])
     if k.get("zenodo"):
@@ -178,16 +237,21 @@ def _curl(url: str, hedef: Path) -> None:
     # Yarim dosya (.kismi) silinmez: sunucu baglantiyi koparirsa (curl 18) bir
     # sonraki deneme kaldigi yerden surer (--continue-at -). Buyuk dosyalarda
     # (MM-Fit, 1-3 GB) Zenodo baglantiyi yarida kapatabiliyor.
+    # curl'un kendi --retry'i KULLANILMAZ: yeniden denerken dosyayi o curl
+    # cagrisinin basladigi boyuta geri kirpiyor, yani oturumda inen her sey
+    # kopmada kayboluyordu (REHAB24-6'da .kismi dosyalari kuculdu, 25 Eylul).
+    # Her deneme yeni bir curl'dur; --continue-at - ofseti dosyadan yeniden okur.
     gecici = hedef.with_name(hedef.name + ".kismi")
     sonuc = None
-    for _ in range(DENEME):
+    for deneme in range(DENEME):
         sonuc = subprocess.run(
             ["curl", "--fail", "--location", "--silent", "--show-error",
-             "--retry", "3", "--retry-all-errors", "--continue-at", "-",
-             "--output", str(gecici), url], capture_output=True, text=True)
+             "--continue-at", "-", "--output", str(gecici), url],
+            capture_output=True, text=True)
         if sonuc.returncode == 0:
             gecici.replace(hedef)
             return
+        time.sleep(min(60, 2 ** deneme))
     raise ValueError(f"indirme basarisiz ({sonuc.returncode}) {url}: {sonuc.stderr.strip()} "
                      f"-- yarim dosya {gecici.name} saklandi, tekrar calistirinca surer")
 
@@ -198,7 +262,7 @@ def _dosya_adi(url: str) -> str:
     return parcalar[-2] if parcalar[-1] == "content" else parcalar[-1]
 
 
-def indir(ad: str, hedef_kok: Path = HEDEF) -> Path:
+def indir(ad: str, hedef_kok: Path = HEDEF, paralel: int = 1) -> Path:
     """Kaynagi indir; var olan dosyalar atlanir (yarida kalan indirme surdurulur)."""
     k = KATALOG[ad]
     if k["erisim"] != "dogrudan":
@@ -216,17 +280,29 @@ def indir(ad: str, hedef_kok: Path = HEDEF) -> Path:
         kayit["dosyalar"] = {kayit.pop("dosya"): {
             "url": kayit["url"], "sha256": kayit.pop("sha256"), "bayt": kayit.pop("bayt"),
             "indirme_utc": kayit.pop("indirme_utc")}}
-    for url in adresler:
-        dosya = dizin / _dosya_adi(url)
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+    kilit = threading.Lock()
+
+    def tek(oge) -> None:
+        url, ad_ = oge if isinstance(oge, tuple) else (oge, _dosya_adi(oge))
+        dosya = dizin / ad_
         if dosya.name in kayit["dosyalar"] and dosya.exists():
-            continue
+            return
         _curl(url, dosya)
-        kayit["dosyalar"][dosya.name] = {
-            "url": url, "sha256": _sha256(dosya), "bayt": dosya.stat().st_size,
-            "indirme_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
-        # Her dosyadan sonra yazilir: yarida kesilirse biten dosyalar kayitli kalir.
-        kayit_yolu.write_text(json.dumps(kayit, ensure_ascii=False, indent=2),
-                              encoding="utf-8")
+        bilgi = {"url": url, "sha256": _sha256(dosya), "bayt": dosya.stat().st_size,
+                 "indirme_utc": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+        with kilit:
+            kayit["dosyalar"][dosya.name] = bilgi
+            # Her dosyadan sonra yazilir: yarida kesilirse biten dosyalar kayitli kalir.
+            kayit_yolu.write_text(json.dumps(kayit, ensure_ascii=False, indent=2),
+                                  encoding="utf-8")
+
+    # paralel > 1: tek sunucudan baglanti basina hiz sinirli oldugunda (Zenodo)
+    # dosyalar ayni anda iner; her biri yine kaldigi yerden surer.
+    with ThreadPoolExecutor(max_workers=max(1, paralel)) as havuz:
+        for sonuc in havuz.map(tek, adresler):
+            pass
     # Hic dosya inmese de yaz: eski bicimden donusum diske islensin.
     kayit_yolu.write_text(json.dumps(kayit, ensure_ascii=False, indent=2), encoding="utf-8")
     return dizin
@@ -238,6 +314,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--indir", metavar="AD")
     p.add_argument("--indir-hepsi-dogrudan", action="store_true")
     p.add_argument("--en-cok-mb", type=float, default=1000.0)
+    p.add_argument("--paralel", type=int, default=1, help="kaynak icinde es zamanli dosya")
     a = p.parse_args(argv)
     if hatalar := katalog_denetle():
         print("\n".join(hatalar), file=sys.stderr)
@@ -250,10 +327,11 @@ def main(argv: list[str] | None = None) -> int:
     adlar = [a.indir] if a.indir else [
         ad for ad, k in KATALOG.items()
         if k["erisim"] == "dogrudan" and k["mb"] is not None and k["mb"] <= a.en_cok_mb
-        and (_dosya_adresi_mi(k["url"]) or k.get("dosyalar") or k.get("zenodo"))]
+        and (_dosya_adresi_mi(k["url"]) or k.get("dosyalar") or k.get("zenodo")
+             or k.get("dataverse"))]
     for ad in adlar:
         try:
-            print(f"indiriliyor: {ad} -> {indir(ad)}")
+            print(f"indiriliyor: {ad} -> {indir(ad, paralel=a.paralel)}")
         except ValueError as exc:
             print(f"atlandi: {ad}: {exc}")
     return 0
