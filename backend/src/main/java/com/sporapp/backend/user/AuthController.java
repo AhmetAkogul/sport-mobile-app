@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.sporapp.backend.user.dto.AuthResponse;
+import com.sporapp.backend.user.dto.LoginRequest;
 import com.sporapp.backend.user.dto.RegisterRequest;
 import com.sporapp.backend.user.dto.UserResponse;
 
@@ -26,6 +28,11 @@ public class AuthController {
     public ResponseEntity<UserResponse> register(@Valid @RequestBody RegisterRequest request) { // @requestbody = Frontend'den gelen JSON'u Java nesnesine çeviriyor., @valid aşağıda
         UserResponse response = userService.register(request); // HTTP isteği kaydedilmek üzere userServiceye gönderir
         return ResponseEntity.status(HttpStatus.CREATED).body(response); // HTTP response oluştur
+    }
+
+      @PostMapping("/login")
+    public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
+        return ResponseEntity.ok(userService.login(request));
     }
 }
 

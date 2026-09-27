@@ -7,6 +7,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.sporapp.backend.common.exception.EmailAlreadyExistsException;
+import com.sporapp.backend.common.exception.InvalidCredentialsException;
+import com.sporapp.backend.security.JwtService;
+import com.sporapp.backend.user.dto.AuthResponse;
+import com.sporapp.backend.user.dto.LoginRequest;
 import com.sporapp.backend.user.dto.RegisterRequest;
 import com.sporapp.backend.user.dto.UserResponse;
 
@@ -15,10 +19,13 @@ public class UserService {
 
     private final UserRepository userRepository; // dbdeki user işlemlerini yapmayı saglar*
     private final PasswordEncoder passwordEncoder; // pass encode (bcrypt)
+    private final JwtService jwtService; // token üretir/doğrular
 
-    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, PasswordEncoder passwordEncoder,
+                       JwtService jwtService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.jwtService = jwtService;
     }
 
     @Transactional
@@ -40,5 +47,20 @@ public class UserService {
 
         User saved = userRepository.save(user); // dbye kaydet
         return UserResponse.from(saved); // userResponse.java ya return
+    }
+
+    @Transactional(readOnly = true)
+    public AuthResponse login(LoginRequest request) { // maili bul → şifreyi karşılaştır → token üret → response döndür
+        String email = request.email().trim().toLowerCase(Locale.ROOT); // kayıttaki ile aynı normalizasyon
+
+        User user = userRepository.findByEmail(email) // kullanıcı yoksa da şifre yanlışsa da AYNI hata döner
+                .orElseThrow(InvalidCredentialsException::new);
+
+        if (!passwordEncoder.matches(request.password(), user.getPassword())) { // düz metin şifre vs DB'deki hash
+            throw new InvalidCredentialsException();
+        }
+
+        String token = jwtService.generateToken(user); // imzalı token üret
+        return AuthResponse.bearer(token, jwtService.getExpirationSeconds(), user);
     }
 }
