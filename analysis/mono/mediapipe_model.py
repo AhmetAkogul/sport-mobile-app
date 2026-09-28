@@ -100,10 +100,15 @@ class MediaPipeEstimator:
         world = getattr(result, "pose_world_landmarks", [])
         extra = {}
         if pose.tespit and len(world) == 1:
-            xyz, _, visible = mediapipe_dunya_noktalari(world[0], guven_esigi=self.threshold)
+            xyz, conf, visible = mediapipe_dunya_noktalari(world[0], guven_esigi=self.threshold)
+            # Maskelenmemis kopya: modelin gorunmez (or. profilde arkadaki bacak)
+            # eklem icin de verdigi tahmin. Kullanan taraf guveni kendisi tartar;
+            # `world_points_m` sozlesmesi (yalniz gorunur) degismez.
+            extra = {"world_points_all_m": xyz.tolist(), "world_confidence": conf.tolist()}
             visible = visible & pose.gorunur
+            xyz = xyz.copy()
             xyz[~visible] = np.nan
-            extra = {"world_points_m": xyz.tolist(), "world_visible": visible.tolist()}
+            extra |= {"world_points_m": xyz.tolist(), "world_visible": visible.tolist()}
         # `replace`: Poz2B frozen; `ek.update` yerine yeni bir kopya uretilir.
         return replace(pose, ek={**pose.ek, **extra, "model_sha256": self.sha256,
                                  "running_mode": "IMAGE", "device": "CPU"})

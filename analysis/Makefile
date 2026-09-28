@@ -1,6 +1,9 @@
-.PHONY: kurulum kurulum-dev kontrol test lint kapsam reproduce kilit kilit-surum temiz
+.PHONY: kurulum kurulum-dev kontrol test lint kapsam reproduce kilit kilit-surum canli temiz
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
+# MediaPipe ayri ortamda (0008); varsayilan yollar bitirme-capture calisma agaci.
+MP_PYTHON ?= ../bitirme-capture/data/mediapipe-env/bin/python
+MP_MODEL ?= ../bitirme-capture/data/models/pose_landmarker_full-float16-v1.task
 
 kurulum:          ## Bagimliliklari kur
 	$(PYTHON) -m pip install -r requirements.txt
@@ -40,6 +43,9 @@ kilit:            ## Rapordaki sayilari kilitle karsilastir (reproduce'dan sonra
 
 kilit-surum:      ## Calisan ortamin tam surumlerini requirements-lock.txt'e yaz
 	$(PYTHON) -m pip freeze --exclude-editable | grep -v -i -E '^(ruff|pytest-cov|coverage)==' > requirements-lock.txt
+
+canli:            ## Kameradan canli squat valgus denemesi (q: cikis)
+	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) $(ARGS)
 
 temiz:
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

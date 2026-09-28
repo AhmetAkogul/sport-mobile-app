@@ -31,12 +31,14 @@ from veri.rehab24 import tekrarlar_oku  # noqa: E402
 
 KOK = Path(__file__).resolve().parent.parent
 VERI = KOK / "data/dis/rehab24_6"
+# Veri setindeki dosya adlari: Ex6/PM_008-Camera17-30fps.mp4, ...-Camera18-30fps-transposed.mp4
+_KAMERA_ADI = {"c17": "Camera17", "c18": "Camera18"}
 
 
 def video_bul(video: str, kamera: str) -> Path:
     adaylar = sorted(p for p in (VERI / "videos").rglob("*")
                      if p.suffix.lower() in (".mp4", ".avi", ".mov")
-                     and video in p.name and kamera in p.name)
+                     and video in p.name and _KAMERA_ADI[kamera] in p.name)
     if len(adaylar) != 1:
         raise FileNotFoundError(f"{video}-{kamera}: {len(adaylar)} aday ({adaylar[:3]})")
     return adaylar[0]
@@ -68,7 +70,8 @@ def main() -> None:
                 if hedef.exists():
                     continue
                 kayit: dict[str, list] = {k: [] for k in (
-                    "kare", "noktalar", "guven", "gorunur", "tespit", "dunya", "dunya_gorunur")}
+                    "kare", "noktalar", "guven", "gorunur", "tespit", "dunya", "dunya_gorunur",
+                    "dunya_tam", "dunya_guven")}
                 cap = cv2.VideoCapture(str(video_bul(video, kamera)))
                 i, son, boyut = 0, max(kareler), None
                 try:
@@ -93,6 +96,11 @@ def main() -> None:
                                 poz.ek.get("world_points_m", np.full((n, 3), np.nan)), float))
                             kayit["dunya_gorunur"].append(np.asarray(
                                 poz.ek.get("world_visible", np.zeros(n, bool)), bool))
+                            # Maskelenmemis dunya (gorunmez eklem tahmini dahil) ve guveni.
+                            kayit["dunya_tam"].append(np.asarray(
+                                poz.ek.get("world_points_all_m", np.full((n, 3), np.nan)), float))
+                            kayit["dunya_guven"].append(np.asarray(
+                                poz.ek.get("world_confidence", np.zeros(n)), float))
                         i += 1
                 finally:
                     cap.release()

@@ -29,6 +29,12 @@ Geliştirme: `make kurulum-dev` (ruff, pytest-cov), `make lint`, `make kapsam`.
 → işaretli video + kare başına iki form kararı (yalın eşik / belirsizliği bilen).
 Ayrıntı ve örnek sonuç: `docs/deney/2026-09-23-telefon-hatti-uctan-uca.md`.
 
+**Canlı kamera:** `make canli` (MediaPipe ortamı ve modeli `MP_PYTHON`, `MP_MODEL`
+ile değiştirilebilir; kayıt için `ARGS="--kaydet out/deneme.mp4"`). Bilgisayar
+kamerasından squat: gövde açısı, açıya göre düzeltilmiş valgus, tekrar kararı;
+60°'nin üstünde "bu açıdan ölçülemez". Kameraya önden durun. Araştırma denemesi:
+gerçek salon videolarında "dizler içe"yi ayıramadı (`docs/deney/2026-09-28-profil-ve-etiketsiz-yon.md`).
+
 ## Katmanlar
 
 | Katman | Rol | Hedef hata |
