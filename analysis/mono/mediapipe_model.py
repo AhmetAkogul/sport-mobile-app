@@ -109,6 +109,21 @@ class MediaPipeEstimator:
             xyz = xyz.copy()
             xyz[~visible] = np.nan
             extra |= {"world_points_m": xyz.tolist(), "world_visible": visible.tolist()}
+            # Yuz gorunurlugu (burun, gozler): Poz2B yuzu tasimaz; sirti donuk kisiyi
+            # (onden bakisla ayni govde acisi) ayirmak icin kullanilir.
+            yuz = [result.pose_landmarks[0][i] for i in (0, 2, 5)]
+            extra["yuz_guveni"] = float(max(min(getattr(p, "visibility", 0.0) or 0.0,
+                                                getattr(p, "presence", 1.0) or 0.0) for p in yuz))
+            # Ayak noktalari (REFERANS_ISKELET tasimaz): sag topuk, sag ayak ucu, sol
+            # topuk, sol ayak ucu -- MediaPipe 30, 32, 29, 31. Lunge'da "diz ayak
+            # ucunu geciyor" icin (docs/deney/2026-09-28-ec3d-lunge.md).
+            ayak = (30, 32, 29, 31)
+            lm2, lm3 = result.pose_landmarks[0], world[0]
+            extra["ayak_px"] = [[lm2[i].x * width, lm2[i].y * height] for i in ayak]
+            extra["ayak_dunya_m"] = [[lm3[i].x, lm3[i].y, lm3[i].z] for i in ayak]
+            extra["ayak_guveni"] = [float(min(getattr(lm2[i], "visibility", 0.0) or 0.0,
+                                              getattr(lm2[i], "presence", 1.0) or 0.0))
+                                    for i in ayak]
         # `replace`: Poz2B frozen; `ek.update` yerine yeni bir kopya uretilir.
         return replace(pose, ek={**pose.ek, **extra, "model_sha256": self.sha256,
                                  "running_mode": "IMAGE", "device": "CPU"})

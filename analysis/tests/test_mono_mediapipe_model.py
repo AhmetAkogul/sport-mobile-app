@@ -95,5 +95,9 @@ def test_gorunmez_eklemin_dunya_tahmini_ayri_anahtarda_korunur():
     assert np.isnan(gorunur[diz]).all() and not ek["world_visible"][diz]
     np.testing.assert_allclose(tam[diz], [0.3, 0.7, 0.2])
     assert ek["world_confidence"][diz] == pytest.approx(0.1)
+    assert ek["yuz_guveni"] == pytest.approx(0.9)       # burun/gozler gorunur
+    assert np.array(ek["ayak_px"]).shape == (4, 2) and np.array(ek["ayak_dunya_m"]).shape == (4, 3)
+    np.testing.assert_allclose(ek["ayak_dunya_m"][0], [0.25, 0.75, 0.2])   # sag topuk (30)
+    assert ek["ayak_guveni"] == pytest.approx([0.9] * 4)
     ayni = np.array(ek["world_visible"])
     np.testing.assert_array_equal(gorunur[ayni], tam[ayni])

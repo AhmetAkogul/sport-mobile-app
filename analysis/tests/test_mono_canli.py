@@ -99,3 +99,38 @@ def test_zaman_geri_giderse_cokmez():
     d.ekle(1.0, _ek(_iskelet()))
     d.ekle(1.0, _ek(_iskelet()))        # ayni damga: kesin artana cekilir
     assert d.son_zaman > 1.0
+
+
+@pytest.mark.parametrize("bacak,yuz,aci,kip", [
+    (False, 0.9, 0.0, "kadraj"), (True, 0.9, None, "kadraj"),
+    (True, 0.1, 10.0, "sirt"), (True, 0.1, 80.0, "yandan"),   # yandan yuz gorunmeyebilir
+    (True, 0.9, 10.0, "onden"), (True, 0.9, 45.0, "ara"), (True, None, 10.0, "onden"),
+])
+def test_rehber_kipleri(bacak, yuz, aci, kip):
+    assert canli.rehber(bacak, yuz, aci)[0] == kip
+
+
+def test_sagital_olculer_ayakta_ve_cokmus():
+    ayakta = canli.sagital_olculer(canli.dunya_iskeleti(_ek(_iskelet())))
+    assert ayakta["derinlik"] == pytest.approx(0.0, abs=1e-6)
+    assert ayakta["govde_egimi"] == pytest.approx(0.0, abs=1e-6)
+    assert ayakta["diz_onde"] == pytest.approx(0.0, abs=1e-6)
+    cok = canli.sagital_olculer(canli.dunya_iskeleti(_ek(_iskelet(fleksiyon=100))))
+    assert cok["derinlik"] == pytest.approx(100.0, abs=1e-6)
+    assert cok["diz_onde"] == pytest.approx(np.sin(np.radians(50)), abs=1e-6)
+
+
+def test_sirti_donuk_ve_kadraj_disi_valgus_karari_yok():
+    ek = {**_ek(_iskelet(fleksiyon=80, ice=0.1)), "yuz_guveni": 0.05}
+    kare, bilgi = canli.kare_hazirla(canli.dunya_iskeleti(ek), True, ek["yuz_guveni"])
+    assert bilgi["kip"] == "sirt" and bilgi["olculemez"]
+    assert {o["karar"] for o in kare["olcumler"].values()} == {"belirsiz"}
+    _, bilgi = canli.kare_hazirla(canli.dunya_iskeleti(_ek(_iskelet())), False, 0.9)
+    assert bilgi["kip"] == "kadraj" and bilgi["olculemez"] and bilgi["sagital"] is None
+
+
+def test_yandan_tekrar_ozetinde_sagital_var_onden_yok():
+    s = _squat(canli.CanliDegerlendirici(), yaw=85)["son_tekrar"]
+    assert s["sagital"]["derinlik"] == pytest.approx(100.0, abs=1.0)
+    s = _squat(canli.CanliDegerlendirici())["son_tekrar"]
+    assert s["sagital"] is None

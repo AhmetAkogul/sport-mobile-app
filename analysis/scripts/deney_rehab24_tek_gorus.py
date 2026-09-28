@@ -24,6 +24,7 @@ BELIRSIZ.
 from __future__ import annotations
 
 import json
+import pickle
 import sys
 from collections import defaultdict
 from pathlib import Path
@@ -32,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np  # noqa: E402
 
-from eval.egzersiz import SQUAT  # noqa: E402
+from eval.egzersiz import SQUAT, diz_fleksiyonu  # noqa: E402
 from eval.form import VARSAYILAN_ESIKLER, Karar, form_degerlendir  # noqa: E402
 from eval.protokol import Oge, Sayim, kisi_agirlikli, kisi_bootstrap  # noqa: E402
 from mono.canli import govde_acisi  # noqa: E402,F401  (acinin tek tanimi)
@@ -314,6 +315,7 @@ def main() -> None:
                 tel, hata, sekil, gorunur_oran, valgus_fark = [], [], [], [], []
                 seri_deg: list[tuple[float, float]] = []
                 seri_aci: list[float] = []
+                seri_fleks: list[float] = []
                 for j, q in enumerate(kareler):
                     kare = t.ilk + j
                     P_ref = (kam.R @ ref_iskelet[j].noktalar.T + kam.t[:, None]).T
@@ -325,6 +327,8 @@ def main() -> None:
                     elif kare not in d["indeks"]:
                         tel.append((Karar.BELIRSIZ, Karar.BELIRSIZ))
                         seri_deg.append((np.nan, np.nan))
+                        seri_aci.append(np.nan)
+                        seri_fleks.append(np.nan)
                         gorunur_oran.append(0.0)
                         continue
                     elif yontem == "mediapipe_world":
@@ -348,6 +352,8 @@ def main() -> None:
                     tel.append(kk)
                     seri_deg.append(deg)
                     seri_aci.append(govde_acisi(isk.noktalar))
+                    fl = diz_fleksiyonu(isk)
+                    seri_fleks.append(float("nan") if fl is None else fl)
                     valgus_fark.extend(abs(a - b_) for a, b_ in zip(deg, ref[j][1])
                                        if np.isfinite(a) and np.isfinite(b_))
                     m = isk.gorunur & np.isfinite(P_ref).all(axis=1)
@@ -379,7 +385,8 @@ def main() -> None:
                 satirlar[-1]["govde_acisi_derece"] = (float(np.median(aci[np.isfinite(aci)]))
                                                       if np.isfinite(aci).any() else float("nan"))
                 diziler.append({"satir": satirlar[-1], "kk": tel,
-                                "deg": np.array(seri_deg, dtype=float), "ref_deg": ref_deg})
+                                "deg": np.array(seri_deg, dtype=float), "ref_deg": ref_deg,
+                                "aci": aci, "fleks": np.asarray(seri_fleks, dtype=float)})
 
     # Isaretli valgus farki ve yone bagli kayma duzeltmesi (28 Eylul). Kayma her
     # (yontem, yon) icin test kisisi DISINDAKI kisilerden ogrenilir (LOPO). Yon
@@ -478,6 +485,10 @@ def main() -> None:
                 "hizalamadir: 0070'e gore yalnizca ikincil tani."),
     }
     (KOK / "out").mkdir(exist_ok=True)
+    # Kare dizileri: belirsizlik modeli (deney_rehab24_belirsizlik) bunlardan ogrenir.
+    with open(KOK / "out/rehab24_tek_gorus_diziler.pkl", "wb") as f:
+        pickle.dump([{k: v for k, v in d.items() if k != "kk"} | {
+            "kk": [tuple(str(x) for x in k) for k in d["kk"]]} for d in diziler], f)
     (KOK / "out/rehab24_tek_gorus.json").write_text(
         json.dumps(_temiz(sonuc), ensure_ascii=False, indent=2, allow_nan=False),
         encoding="utf-8")

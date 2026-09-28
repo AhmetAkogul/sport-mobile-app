@@ -106,3 +106,15 @@ def test_gecersiz_coklu_kisi_kurali_reddedilir(tmp_path):
     from mono.rtmpose_model import RTMPoseEstimator
     with pytest.raises(ValueError, match="coklu_kisi"):
         RTMPoseEstimator(tmp_path / "d.onnx", tmp_path / "p.onnx", coklu_kisi="rastgele")
+
+
+def test_rtmw_133_noktanin_ilk_17si_govde_olarak_alinir():
+    """COCO-WholeBody (RTMW): ilk 17 nokta COCO-17; geri kalan (yuz/el/ayak) atilir."""
+    model = estimator([[0, 0, 90, 90]])
+    noktalar = np.full((1, 133, 2), 999.0)
+    noktalar[0, :17] = np.arange(34, dtype=float).reshape(17, 2)
+    model._pose = lambda img, bboxes: (noktalar, np.full((1, 133), .9))
+    pose = model(np.zeros((100, 100, 3), np.uint8))
+    beklenen = coco_to_pose(noktalar[0, :17], np.full(17, .9), (100, 100), model='test')
+    np.testing.assert_array_equal(pose.noktalar, beklenen.noktalar)
+    assert (pose.noktalar[np.isfinite(pose.noktalar)] < 999).all()

@@ -50,9 +50,11 @@ def main() -> None:
     p.add_argument("--model", required=True)
     p.add_argument("--detector")
     p.add_argument("--video", help="yalnizca bu video (deneme icin)")
+    p.add_argument("--egzersiz", type=int, default=6, help="REHAB24 egzersiz no (6 squat, 5 lunge)")
     a = p.parse_args()
 
-    tekrarlar = [t for t in tekrarlar_oku(VERI / "Segmentation.csv") if not t.mocap_hatali]
+    tekrarlar = [t for t in tekrarlar_oku(VERI / "Segmentation.csv", egzersiz=a.egzersiz)
+                 if not t.mocap_hatali]
     videolar = sorted({t.video for t in tekrarlar if a.video in (None, t.video)})
     cikti = KOK / "out/rehab24_tespit" / a.backend
     cikti.mkdir(parents=True, exist_ok=True)
@@ -71,7 +73,7 @@ def main() -> None:
                     continue
                 kayit: dict[str, list] = {k: [] for k in (
                     "kare", "noktalar", "guven", "gorunur", "tespit", "dunya", "dunya_gorunur",
-                    "dunya_tam", "dunya_guven")}
+                    "dunya_tam", "dunya_guven", "ayak_px", "ayak_dunya", "ayak_guven")}
                 cap = cv2.VideoCapture(str(video_bul(video, kamera)))
                 i, son, boyut = 0, max(kareler), None
                 try:
@@ -101,6 +103,13 @@ def main() -> None:
                                 poz.ek.get("world_points_all_m", np.full((n, 3), np.nan)), float))
                             kayit["dunya_guven"].append(np.asarray(
                                 poz.ek.get("world_confidence", np.zeros(n)), float))
+                            # Ayak: sag topuk, sag ayak ucu, sol topuk, sol ayak ucu (MediaPipe).
+                            kayit["ayak_px"].append(np.asarray(
+                                poz.ek.get("ayak_px", np.full((4, 2), np.nan)), float))
+                            kayit["ayak_dunya"].append(np.asarray(
+                                poz.ek.get("ayak_dunya_m", np.full((4, 3), np.nan)), float))
+                            kayit["ayak_guven"].append(np.asarray(
+                                poz.ek.get("ayak_guveni", np.zeros(4)), float))
                         i += 1
                 finally:
                     cap.release()

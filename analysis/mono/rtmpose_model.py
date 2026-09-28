@@ -65,13 +65,17 @@ class RTMPoseEstimator:
     coklu_kisi = "hata"          # varsayilan: tek kisi sozlesmesi, sessiz secim yok
 
     def __init__(self, detector_path, pose_path, *, threshold=SIMCC_GUVEN_ESIGI,
-                 coklu_kisi="hata"):
+                 coklu_kisi="hata", ad="rtmpose-m", giris_boyutu=(192, 256)):
         """`coklu_kisi`: dedektor birden fazla kisi bulursa ne yapilir.
 
         - "hata" (varsayilan): tek kisi sozlesmesi; sessiz secim yapilmaz.
         - "en_buyuk": en buyuk kutu secilir. Yer gercegine bakmaz, bu yuzden
           MediaPipe'in kendi tek-kisi secimine denk bir kuraldir (kiyas adil
           kalir). Kac kisi bulundugu ve secim `ek` alaninda raporlanir.
+
+        `ad` / `giris_boyutu` (genislik, yukseklik): model kimligi ve girisi.
+        RTMW (COCO-WholeBody, 133 nokta) icin or. ad="rtmw-x", (288, 384);
+        133 noktanin ilk 17'si COCO-17 govde noktalaridir ve yalniz onlar alinir.
         """
         if coklu_kisi not in ("hata", "en_buyuk"):
             raise ValueError("coklu_kisi 'hata' ya da 'en_buyuk' olmali")
@@ -82,13 +86,13 @@ class RTMPoseEstimator:
             if not Path(path).is_file():
                 raise FileNotFoundError(path)
         from rtmlib import YOLOX, RTMPose
-        self.model_id = (f"rtmlib-{version('rtmlib')}/rtmpose-m/pose:{file_sha256(pose_path)}"
+        self.model_id = (f"rtmlib-{version('rtmlib')}/{ad}/pose:{file_sha256(pose_path)}"
                          f"/detector:{file_sha256(detector_path)}")
         self.threshold = threshold
         self._closed = False
         self._detector = YOLOX(str(detector_path), model_input_size=(640, 640),
                                backend="onnxruntime", device="cpu")
-        self._pose = RTMPose(str(pose_path), model_input_size=(192, 256),
+        self._pose = RTMPose(str(pose_path), model_input_size=tuple(giris_boyutu),
                              to_openpose=False, backend="onnxruntime", device="cpu")
 
     def __call__(self, image_bgr):
@@ -114,7 +118,8 @@ class RTMPoseEstimator:
         points, scores = self._pose(image_bgr, bboxes=boxes)
         if len(points) != 1 or len(scores) != 1:
             raise ValueError("Tek kişi için beklenmeyen model çıktısı.")
-        poz = coco_to_pose(points[0], scores[0], (width, height), model=self.model_id,
+        # COCO-WholeBody (133): ilk 17 nokta COCO-17 govde noktalaridir.
+        poz = coco_to_pose(points[0][:17], scores[0][:17], (width, height), model=self.model_id,
                            threshold=self.threshold)
         if n_kisi != 1:
             poz = replace(poz, ek={**poz.ek, "bulunan_kisi": n_kisi, "kisi_secimi": "en_buyuk"})

@@ -10,6 +10,11 @@ Degerlendirme ayri betikte (`deney_fitness_aqa_valgus.py`).
 
     PYTHONPATH=. <mediapipe-env>/bin/python scripts/fitness_aqa_tespit.py \\
         --model <pose_landmarker_full.task>
+    PYTHONPATH=. <rtmpose-env>/bin/python scripts/fitness_aqa_tespit.py --backend rtmw \\
+        --model <end2end.onnx> --detector <detector.onnx> --bolum val
+
+`--bolum` (train/val/test) yalniz o resmi bolumu isler; resmi test bolumu son
+olcume saklanir. RTMPose/RTMW'de dunya (3B) alanlari yoktur (NaN).
 """
 from __future__ import annotations
 
@@ -36,14 +41,29 @@ VIDEOLAR = SQUAT / "videos/videos"
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--model", required=True)
+    p.add_argument("--backend", choices=("mediapipe", "rtmpose", "rtmw"), default="mediapipe")
+    p.add_argument("--detector", help="RTMPose/RTMW kisi dedektoru (YOLOX onnx)")
+    p.add_argument("--bolum", choices=("train", "val", "test"))
     p.add_argument("--ilk", type=int, help="yalnizca ilk N video (deneme icin)")
     a = p.parse_args()
 
-    anahtarlar = sorted(json.loads(ETIKET.read_text()))[:a.ilk]
-    cikti = KOK / "out/fitness_aqa_tespit/mediapipe"
+    anahtarlar = sorted(json.loads(ETIKET.read_text()))
+    if a.bolum:
+        secili = set(json.loads((SQUAT / f"Splits/{a.bolum}_keys.json").read_text()))
+        anahtarlar = [k for k in anahtarlar if k in secili]
+    anahtarlar = anahtarlar[:a.ilk]
+    cikti = KOK / "out/fitness_aqa_tespit" / a.backend
     cikti.mkdir(parents=True, exist_ok=True)
     n = len(REFERANS_ISKELET)
-    with kestirici_olustur("mediapipe", model=a.model) as model:
+    if a.backend == "mediapipe":
+        baglam = kestirici_olustur("mediapipe", model=a.model)
+    else:
+        from mono.rtmpose_model import RTMPoseEstimator
+        ayar = {"rtmpose": ("rtmpose-m", (192, 256)), "rtmw": ("rtmw-x", (288, 384))}
+        ad, giris = ayar[a.backend]
+        baglam = RTMPoseEstimator(a.detector, a.model, coklu_kisi="en_buyuk", ad=ad,
+                                  giris_boyutu=giris)
+    with baglam as model:
         for sira, anahtar in enumerate(anahtarlar, 1):
             hedef = cikti / f"{anahtar}.npz"
             if hedef.exists():
