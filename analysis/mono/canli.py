@@ -97,22 +97,10 @@ def rehber(bacak_gorunur: bool, yuz_guveni: float | None, aci: float | None) -> 
 
 
 def govde_acisi(P: np.ndarray) -> float:
-    """Kamera cercevesinde govdenin bakis acisi, derece: 0 onden, 90 profil.
-
-    Sol-sag kalca ve omuz vektorlerinin ortalamasinin X (sag) - Z (derinlik)
-    duzlemindeki yonu. Kameraya donuk ile sirti donuk ayrilmaz (ikisi de 0);
-    karar icin gereken de yalnizca profile ne kadar yakin oldugudur.
-    `P`: (13, 3) REFERANS sirasinda, kamera eksenleriyle hizali (X sag, Z ileri).
-    """
-    i = REFERANS_ISKELET.indeks
-    v = [P[i("sol_kalca")] - P[i("sag_kalca")], P[i("sol_omuz")] - P[i("sag_omuz")]]
-    v = [x for x in v if np.isfinite(x).all()]
-    if not v:
-        return float("nan")
-    x, z = np.mean(v, axis=0)[[0, 2]]
-    if x == 0 and z == 0:
-        return float("nan")
-    return float(np.degrees(np.arctan2(abs(z), abs(x))))
+    """Kamera cercevesinde govdenin bakis acisi (0 onden, 90 profil); tek tanim
+    `eval.hareket_formu.bakis_acisi`'dadir (hareket formu da ayni aciyi kullanir)."""
+    from eval.hareket_formu import bakis_acisi
+    return bakis_acisi(P)
 
 
 def dunya_iskeleti(ek: dict) -> Iskelet3B | None:
