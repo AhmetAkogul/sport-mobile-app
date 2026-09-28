@@ -14,7 +14,8 @@ MEDIAPIPE_GUVEN_ESIGI = 0.5
 
 
 def kestirici_olustur(backend: str, *, model: str, detector: str | None = None,
-                      threshold: float | None = None, coklu_kisi: str = "hata"):
+                      threshold: float | None = None, coklu_kisi: str = "hata",
+                      el_modeli=None):
     """Backend adindan estimator uret (context manager olarak kullanilir).
 
     Donen nesnenin `model_id` alani rapora yazilir; hangi surum/varyant ile
@@ -23,7 +24,7 @@ def kestirici_olustur(backend: str, *, model: str, detector: str | None = None,
     if backend == "mediapipe":
         from mono.mediapipe_model import MediaPipeEstimator
         return MediaPipeEstimator(model, threshold=(
-            MEDIAPIPE_GUVEN_ESIGI if threshold is None else threshold))
+            MEDIAPIPE_GUVEN_ESIGI if threshold is None else threshold), el_modeli=el_modeli)
     if backend == "rtmpose":
         if not detector:
             raise ValueError("rtmpose icin dedektor modeli (--detector) gerekli")

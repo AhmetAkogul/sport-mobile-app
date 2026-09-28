@@ -14,6 +14,10 @@ from pose3d.iskelet import REFERANS_ISKELET
 from pose3d.pose2d import Poz2B
 
 
+# El kirpintisinin model girisine buyutuldugu kenar (piksel).
+EL_GIRIS = 256
+
+
 def _sayisal_surum(metin: str) -> tuple[int, ...]:
     """'1.0.0.post1' -> (1, 0, 0); sayisal olmayan ilk parcada durur."""
     parcalar: list[int] = []
@@ -50,7 +54,12 @@ class MediaPipeEstimator:
     taşımadan işler. VIDEO takip optimizasyonu bu ilk baseline'a dahil değildir.
     """
 
-    def __init__(self, model_path, *, threshold=0.5):
+    def __init__(self, model_path, *, threshold=0.5, el_modeli=None, kisi_sayisi=1):
+        """`el_modeli`: hand_landmarker.task; verilirse `tam_vucut` parmaklari da doner.
+
+        `kisi_sayisi` > 1 yalniz `kisiler` icindir; `__call__` tek kisi
+        sozlesmesini korur ve birden fazla poz gelirse hata verir.
+        """
         if type(threshold) not in (int, float) or not math.isfinite(threshold) or not 0 <= threshold <= 1:
             raise ValueError("Güven eşiği 0..1 aralığında olmalı.")
         path = Path(model_path)
@@ -82,20 +91,109 @@ class MediaPipeEstimator:
         # olurdu). GPU yolu denenirse karar kaydinda ayrica belirtilmeli.
         options = PoseLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(path.resolve()), delegate=BaseOptions.Delegate.CPU),
-            running_mode=RunningMode.IMAGE, num_poses=1,
+            running_mode=RunningMode.IMAGE, num_poses=int(kisi_sayisi),
             min_pose_detection_confidence=0.5, min_pose_presence_confidence=0.5,
             output_segmentation_masks=False)
         self._detector = PoseLandmarker.create_from_options(options)
+        self._el = None
+        self.el_sha256 = None
+        if el_modeli is not None:
+            el_yolu = Path(el_modeli)
+            if not el_yolu.is_file():
+                raise FileNotFoundError(el_yolu)
+            from mediapipe.tasks.python.vision import HandLandmarker, HandLandmarkerOptions
+            self.el_sha256 = file_sha256(el_yolu)
+            self._el = HandLandmarker.create_from_options(HandLandmarkerOptions(
+                base_options=BaseOptions(model_asset_path=str(el_yolu.resolve()),
+                                         delegate=BaseOptions.Delegate.CPU),
+                running_mode=RunningMode.IMAGE, num_hands=1,
+                min_hand_detection_confidence=0.5, min_hand_presence_confidence=0.5))
 
-    def __call__(self, image_bgr):
+    def _goruntu(self, image_bgr):
         if self._closed:
             raise RuntimeError("Model kapalı.")
         if (not isinstance(image_bgr, np.ndarray) or image_bgr.dtype != np.uint8
                 or image_bgr.ndim != 3 or image_bgr.shape[2] != 3 or image_bgr.size == 0):
             raise ValueError("Girdi boş olmayan BGR uint8 görüntü olmalı.")
-        height, width = image_bgr.shape[:2]
         rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
-        result = self._detector.detect(self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb))
+        return self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb), rgb
+
+    def _eller(self, rgb, lm, width, height):
+        """Her kol icin el bolgesini kirpip el modelini orada calistirir.
+
+        Tam boy karede el ~50 piksel kalir ve MediaPipe'in avuc dedektoru onu
+        kacirir (REHAB24'te 0/3 karede el). Holistic'in yaptigi gibi el
+        bolgesi pozdan kestirilir: dirsek->bilek yonunde bilegin otesi, kenar
+        onkol boyunun ~1,6 kati; kirpinti `EL_GIRIS` piksele buyutulur.
+        """
+        if getattr(self, "_el", None) is None:
+            return []
+        eller = []
+        for dirsek, bilek in ((13, 15), (14, 16)):
+            d = np.array([lm[dirsek].x * width, lm[dirsek].y * height])
+            b = np.array([lm[bilek].x * width, lm[bilek].y * height])
+            onkol = float(np.linalg.norm(b - d))
+            if not np.isfinite(onkol) or onkol < 4:
+                continue
+            merkez = b + 0.45 * (b - d)
+            kenar = 1.6 * onkol
+            x0, y0 = merkez - kenar / 2
+            ix0, iy0 = int(round(x0)), int(round(y0))
+            ik = int(round(kenar))
+            # Kare disina tasan kisim siyahla doldurulur (olcek bozulmasin).
+            kir = np.zeros((ik, ik, 3), np.uint8)
+            sx0, sy0 = max(ix0, 0), max(iy0, 0)
+            sx1, sy1 = min(ix0 + ik, width), min(iy0 + ik, height)
+            if sx1 <= sx0 or sy1 <= sy0:
+                continue
+            kir[sy0 - iy0:sy1 - iy0, sx0 - ix0:sx1 - ix0] = rgb[sy0:sy1, sx0:sx1]
+            kir = cv2.resize(kir, (EL_GIRIS, EL_GIRIS), interpolation=cv2.INTER_LINEAR)
+            sonuc = self._el.detect(self._mp.Image(image_format=self._mp.ImageFormat.SRGB,
+                                                   data=np.ascontiguousarray(kir)))
+            olcek = ik / EL_GIRIS
+            for el in sonuc.hand_landmarks:
+                eller.append(np.array([[ix0 + p.x * EL_GIRIS * olcek, iy0 + p.y * EL_GIRIS * olcek]
+                                       for p in el]))
+        return eller
+
+    def _tam(self, lm, eller, width, height):
+        from pose3d.tam_vucut import mediapipe_tam_vucut
+        px = np.array([[p.x * width, p.y * height] for p in lm])
+        guven = np.array([min(getattr(p, "visibility", 0.0) or 0.0, getattr(p, "presence", 1.0) or 0.0)
+                          for p in lm])
+        el_sha = getattr(self, "el_sha256", None)
+        model = self.model_id + (f"+hand/sha256:{el_sha}" if el_sha else "")
+        return mediapipe_tam_vucut(px, guven, eller, (width, height), model=model,
+                                   esik=self.threshold)
+
+    def tam_vucut(self, image_bgr):
+        """(referans Poz2B, TAM_VUCUT Poz2B): govde, bas, ayaklar ve -- el modeli
+        verildiyse -- parmak eklemleri. Referans poz `__call__` ile aynidir."""
+        from pose3d.tam_vucut import bos_poz
+        mp_image, rgb = self._goruntu(image_bgr)
+        height, width = image_bgr.shape[:2]
+        result = self._detector.detect(mp_image)
+        pose = self._sonuc_pozu(result, width, height)
+        if not result.pose_landmarks:
+            return pose, bos_poz((width, height), self.model_id)
+        lm = result.pose_landmarks[0]
+        return pose, self._tam(lm, self._eller(rgb, lm, width, height), width, height)
+
+    def kisiler(self, image_bgr):
+        """Karedeki her kisi icin TAM_VUCUT Poz2B listesi (sira: MediaPipe'inki,
+        kimlik tasimaz; kimlik icin `mono.coklu_kisi.KisiTakip`)."""
+        mp_image, rgb = self._goruntu(image_bgr)
+        height, width = image_bgr.shape[:2]
+        result = self._detector.detect(mp_image)
+        return [self._tam(lm, self._eller(rgb, lm, width, height), width, height)
+                for lm in result.pose_landmarks]
+
+    def __call__(self, image_bgr):
+        mp_image, _ = self._goruntu(image_bgr)
+        height, width = image_bgr.shape[:2]
+        return self._sonuc_pozu(self._detector.detect(mp_image), width, height)
+
+    def _sonuc_pozu(self, result, width, height):
         pose = result_to_pose(result, (width, height), model=self.model_id, threshold=self.threshold)
         world = getattr(result, "pose_world_landmarks", [])
         extra = {}
@@ -132,6 +230,8 @@ class MediaPipeEstimator:
         if not self._closed:
             self._closed = True
             self._detector.close()
+            if getattr(self, "_el", None) is not None:
+                self._el.close()
 
     def __enter__(self):
         return self

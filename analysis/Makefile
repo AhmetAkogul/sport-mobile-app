@@ -4,6 +4,8 @@ PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 # MediaPipe ayri ortamda (0008); varsayilan yollar bitirme-capture calisma agaci.
 MP_PYTHON ?= ../bitirme-capture/data/mediapipe-env/bin/python
 MP_MODEL ?= ../bitirme-capture/data/models/pose_landmarker_full-float16-v1.task
+# El modeli (parmak eklemleri); dosya yoksa canli mod parmaksiz calisir.
+MP_EL ?= data/dis/mediapipe_hand/hand_landmarker.task
 
 kurulum:          ## Bagimliliklari kur
 	$(PYTHON) -m pip install -r requirements.txt
@@ -45,7 +47,8 @@ kilit-surum:      ## Calisan ortamin tam surumlerini requirements-lock.txt'e yaz
 	$(PYTHON) -m pip freeze --exclude-editable | grep -v -i -E '^(ruff|pytest-cov|coverage)==' > requirements-lock.txt
 
 canli:            ## Kameradan canli squat valgus denemesi (q: cikis)
-	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) $(ARGS)
+	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) \
+		$(if $(wildcard $(MP_EL)),--el-modeli $(MP_EL)) $(ARGS)
 
 temiz:
 	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

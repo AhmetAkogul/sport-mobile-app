@@ -217,6 +217,47 @@ _BACAK = [REFERANS_ISKELET.indeks(e) for e in (
 _RENK = {"dogru": (60, 180, 60), "kusurlu": (40, 40, 220), "belirsiz": (0, 190, 230)}
 
 
+# Tam vucut cizim renkleri (BGR): govde beyaz, ayak turuncu, eller parmak parmak.
+_GRUP_RENK = {"bas": (255, 200, 120), "govde": (255, 255, 255), "ayak": (0, 160, 255),
+              "sol_el": (120, 255, 120), "sag_el": (255, 120, 255)}
+
+
+def iskelet_ciz(out: np.ndarray, poz, renk=None, kalinlik: int = 2) -> np.ndarray:
+    """TAM_VUCUT (ya da herhangi bir iskelet) pozunu yerinde cizer.
+
+    Yalniz iki ucu da gorunen baglanti cizilir (eksik = NaN politikasi).
+    `renk` verilirse butun iskelet o renkte (cok kiside kisi rengi) cizilir.
+    """
+    import cv2
+
+    from pose3d.tam_vucut import GRUPLAR, TAM_VUCUT
+    grup = {}
+    if poz.iskelet.ad == TAM_VUCUT.ad:
+        grup = {i: g for g, ix in GRUPLAR.items() for i in ix}
+    P = poz.noktalar
+    for a, b in poz.iskelet.baglantilar:
+        i, j = poz.iskelet.indeks(a), poz.iskelet.indeks(b)
+        if poz.gorunur[i] and poz.gorunur[j]:
+            r = renk or _GRUP_RENK.get(grup.get(j, "govde"), (255, 255, 255))
+            el = grup.get(j, "").endswith("_el")
+            cv2.line(out, tuple(int(v) for v in P[i]), tuple(int(v) for v in P[j]), r,
+                     max(1, kalinlik - 1) if el else kalinlik + 1, cv2.LINE_AA)
+    for i in np.flatnonzero(poz.gorunur):
+        el = grup.get(i, "").endswith("_el")
+        cv2.circle(out, tuple(int(v) for v in P[i]), 2 if el else 4,
+                   renk or (0, 140, 255), -1, cv2.LINE_AA)
+    return out
+
+
+def aynala(poz):
+    """Pozu yatay aynalanmis goruntuye tasir (yalniz gosterim; sol/sag adlari
+    kisinin kendi sol/sagi olarak kalir)."""
+    from dataclasses import replace
+    P = poz.noktalar.copy()
+    P[:, 0] = poz.goruntu_boyutu[0] - 1 - P[:, 0]
+    return replace(poz, noktalar=P)
+
+
 def ciz(image: np.ndarray, noktalar_2b: np.ndarray | None, durum: dict) -> np.ndarray:
     import cv2
     out = image.copy()
@@ -270,12 +311,19 @@ def main(argv=None) -> None:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--model", required=True, help="MediaPipe pose_landmarker .task")
     p.add_argument("--kamera", type=int, default=0, help="kamera indeksi")
+    p.add_argument("--video", type=Path, help="kamera yerine bu videodan oku (deneme icin)")
+    p.add_argument("--pencere", action=argparse.BooleanOptionalAction, default=True,
+                   help="goruntuyu pencerede goster (--no-pencere: yalniz --kaydet)")
     p.add_argument("--aynalama", action=argparse.BooleanOptionalAction, default=True,
                    help="ekrani ayna gibi goster (hesap aynalanmamis goruntuyle yapilir)")
     p.add_argument("--kaydet", type=Path, help="islenmis goruntuyu bu .mp4'e de yaz")
+    p.add_argument("--el-modeli", type=Path,
+                   help="MediaPipe hand_landmarker .task; verilirse parmak eklemleri de cizilir")
     a = p.parse_args(argv)
 
-    cap = cv2.VideoCapture(a.kamera)
+    cap = cv2.VideoCapture(str(a.video) if a.video else a.kamera)
+    if not cap.isOpened() and a.video:
+        raise SystemExit(f"video acilamadi: {a.video}")
     if not cap.isOpened():
         raise SystemExit(f"kamera {a.kamera} acilamadi (macOS: Sistem Ayarlari > Gizlilik "
                          "ve Guvenlik > Kamera'dan Terminal/VS Code'a izin verin)")
@@ -284,12 +332,14 @@ def main(argv=None) -> None:
     n = len(REFERANS_ISKELET)
     t0 = time.monotonic()
     try:
-        with kestirici_olustur("mediapipe", model=a.model) as model:
+        with kestirici_olustur("mediapipe", model=a.model, el_modeli=a.el_modeli) as model:
             while True:
                 ok, im = cap.read()
                 if not ok:
                     break
-                poz = model(im)
+                # Tam vucut (bas, ayaklar, parmaklar) yalniz cizim icin; olcum
+                # referans iskeletten yapilir, degismedi.
+                poz, tam = model.tam_vucut(im)
                 P2 = None
                 if poz.tespit:
                     P2 = np.full((n, 2), np.nan)
@@ -300,22 +350,23 @@ def main(argv=None) -> None:
                 durum = degerlendirici.ekle(time.monotonic() - t0, poz.ek, bacak)
                 if a.aynalama:
                     im = cv2.flip(im, 1)
-                    if P2 is not None:
-                        P2[:, 0] = im.shape[1] - 1 - P2[:, 0]
-                goster = ciz(im, P2, durum)
+                    tam = aynala(tam)
+                goster = ciz(iskelet_ciz(im, tam), None, durum)
                 if a.kaydet is not None:
                     if yazici is None:
                         yazici = cv2.VideoWriter(str(a.kaydet), cv2.VideoWriter_fourcc(*"mp4v"),
                                                  30.0, (goster.shape[1], goster.shape[0]))
                     yazici.write(goster)
-                cv2.imshow("Squat valgus - canli", goster)
-                if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
-                    break
+                if a.pencere:
+                    cv2.imshow("Squat valgus - canli", goster)
+                    if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+                        break
     finally:
         cap.release()
         if yazici is not None:
             yazici.release()
-        cv2.destroyAllWindows()
+        if a.pencere:
+            cv2.destroyAllWindows()
     for s in degerlendirici.takip.sonuclar:
         print(f"tekrar {s['tekrar']}: {s['karar']} ({s['bitis_s'] - s['baslangic_s']:.1f} s)")
 
