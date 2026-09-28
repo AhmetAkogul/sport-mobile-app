@@ -51,8 +51,13 @@ def bozulma_gider(noktalar: np.ndarray, K: np.ndarray, bozulma: np.ndarray) -> n
     return duz.reshape(-1, 2)
 
 
-def _dlt(projeksiyonlar: list[np.ndarray], noktalar: np.ndarray) -> np.ndarray:
-    """Tek nokta icin DLT. noktalar: (M,2), projeksiyonlar: M adet (3,4)."""
+def _dlt(projeksiyonlar: list[np.ndarray], noktalar: np.ndarray,
+         agirliklar: np.ndarray | None = None) -> np.ndarray:
+    """Tek nokta icin DLT. noktalar: (M,2), projeksiyonlar: M adet (3,4).
+
+    `agirliklar` (M,): kamera basina goreli agirlik (satirlar normlandiktan sonra
+    carpilir); None esit agirlik.
+    """
     satirlar = []
     for P, (x, y) in zip(projeksiyonlar, noktalar):
         satirlar.append(x * P[2] - P[0])
@@ -61,7 +66,10 @@ def _dlt(projeksiyonlar: list[np.ndarray], noktalar: np.ndarray) -> np.ndarray:
     # Kosullanma icin olcekle: satir normlari cok farkliysa SVD sayisal olarak bozulur.
     normlar = np.linalg.norm(A, axis=1, keepdims=True)
     normlar[normlar == 0] = 1.0
-    _, _, Vt = np.linalg.svd(A / normlar)
+    A = A / normlar
+    if agirliklar is not None:
+        A = A * np.repeat(np.asarray(agirliklar, dtype=np.float64), 2)[:, None]
+    _, _, Vt = np.linalg.svd(A)
     X = Vt[-1]
     # SVD'nin sag tekil vektoru birim normludur (|X| = 1), dolayisiyla X[3]
     # sonlu bir nokta icin O(1) buyukluktedir ve esik birimden bagimsizdir
@@ -175,8 +183,12 @@ def ucgenle(
     gozlemler: dict[int, np.ndarray],
     bozulma_giderildi: bool = False,
     sigma_px: float | None = None,
+    agirliklar: dict[int, float] | None = None,
 ) -> Ucgenleme:
     """Bir 3B noktayi, onu goren kameralarin 2B gozlemlerinden kestir.
+
+    `agirliklar`: {kamera: goreli agirlik} (or. dedektor ham skorunun karesi, 0039);
+    olasilik degil, ayni modelin kameralar arasi goreli guveni. None esit.
 
     `gozlemler`: {kamera_indeksi: (2,) piksel}. En az iki kamera gerekir --
     tek kameradan derinlik cikmaz, bu projenin tum tezi de zaten bu.
@@ -206,7 +218,10 @@ def ucgenle(
         Ps.append(P_hepsi[i])
         noktalar.append(p)
 
-    X = _dlt(Ps, np.asarray(noktalar))
+    w = None if agirliklar is None else np.array([float(agirliklar[i]) for i in indeksler])
+    if w is not None and (not np.isfinite(w).all() or (w <= 0).any()):
+        raise ValueError("agirliklar pozitif sonlu olmali")
+    X = _dlt(Ps, np.asarray(noktalar), w)
     if not np.isfinite(X).all():
         return Ucgenleme(nokta=X, goren_kamera=len(indeksler), artik_px=float("nan"))
 

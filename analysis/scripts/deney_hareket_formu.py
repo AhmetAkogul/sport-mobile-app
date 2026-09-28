@@ -22,8 +22,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np  # noqa: E402
 
-from eval.hareket_formu import (TekrarSayaci, aci_grubu, ana_sinyal, auc,  # noqa: E402
-                                bakis_acisi, esikler_ogren, tekrar_olculeri)
+from eval.hareket_formu import (OLCULEBILIR_AUC, TekrarSayaci, aci_grubu,  # noqa: E402, F401
+                                ana_sinyal, auc, bakis_acisi, birlesik_kisi_disarida,
+                                birlesik_model, esik_kurali, kisi_disarida_dogruluk,
+                                nedensel_medyan, sayac_esikleri, tekrar_olculeri)
 from veri.rehab24 import kareyi_cevir, tekrar_kareleri, tekrarlar_oku  # noqa: E402
 
 VERI = Path("data/dis/rehab24_6")
@@ -33,7 +35,6 @@ ADLAR = {1: "kol_abduksiyonu", 2: "kol_vw", 3: "sinav", 4: "bacak_abduksiyonu",
 MOCAP_YUKARI = np.array([0.0, 1.0, 0.0])
 MP_YUKARI = np.array([0.0, -1.0, 0.0])
 _ALAN = ("kisi", "video", "tekrar", "yon", "yanlis", "kamera")
-OLCULEBILIR_AUC = 0.70
 
 
 def alt_turler():
@@ -48,68 +49,6 @@ def taraf_bul(alt: str) -> str | None:
     if "left" in alt:
         return "sol"
     return None
-
-
-def esik_kurali(egitim_x, egitim_y):
-    """Youden J'yi en buyuten esik (x > esik -> yanlis)."""
-    x, y = np.asarray(egitim_x, float), np.asarray(egitim_y, bool)
-    ok = np.isfinite(x)
-    x, y = x[ok], y[ok]
-    if not len(x) or y.all() or not y.any():
-        return np.inf
-    aday = np.unique(x)
-    j = [np.mean(x[y] > t) - np.mean(x[~y] > t) for t in aday]
-    return float(aday[int(np.argmax(j))])
-
-
-def kisi_disarida_dogruluk(satirlar, olcu):
-    """Her kisi icin esik diger kisilerden; dogruluk, duyarlilik, ozgulluk."""
-    tahmin, gercek = [], []
-    for k in sorted({s["kisi"] for s in satirlar}):
-        eg = [s for s in satirlar if s["kisi"] != k]
-        te = [s for s in satirlar if s["kisi"] == k and np.isfinite(s[olcu])]
-        t = esik_kurali([s[olcu] for s in eg], [s["yanlis"] for s in eg])
-        tahmin += [s[olcu] > t for s in te]
-        gercek += [s["yanlis"] for s in te]
-    tahmin, gercek = np.array(tahmin, bool), np.array(gercek, bool)
-    if not len(gercek):
-        return None
-    return {"dogruluk": round(float(np.mean(tahmin == gercek)), 3), "n": int(len(gercek)),
-            "duyarlilik": round(float(np.mean(tahmin[gercek])), 3) if gercek.any() else None,
-            "ozgulluk": round(float(np.mean(~tahmin[~gercek])), 3) if (~gercek).any() else None}
-
-
-def birlesik_model():
-    """Butun olculer: eksik -> medyan, olcekleme, dengeli lojistik regresyon."""
-    from sklearn.impute import SimpleImputer
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
-    return make_pipeline(SimpleImputer(strategy="median", keep_empty_features=True),
-                         StandardScaler(), LogisticRegression(C=0.5, class_weight="balanced",
-                                                              max_iter=1000))
-
-
-def birlesik_kisi_disarida(satirlar, olculer):
-    """Butun olculeri birlestiren model, kisi-disarida: AUC ve 0,5 esikte dogruluk."""
-    X = np.array([[s[o] for o in olculer] for s in satirlar], float)
-    y = np.array([s["yanlis"] for s in satirlar], bool)
-    kisi = np.array([s["kisi"] for s in satirlar])
-    p = np.full(len(y), np.nan)
-    for k in sorted(set(kisi)):
-        te = kisi == k
-        if y[~te].all() or not y[~te].any():
-            continue
-        p[te] = birlesik_model().fit(X[~te], y[~te]).predict_proba(X[te])[:, 1]
-    ok = np.isfinite(p)
-    if not ok.any():
-        return None
-    a = auc(p[ok & y], p[ok & ~y])
-    t = p[ok] > 0.5
-    return {"auc": None if a is None else round(a, 3),
-            "dogruluk": round(float(np.mean(t == y[ok])), 3), "n": int(ok.sum()),
-            "duyarlilik": round(float(np.mean(t[y[ok]])), 3),
-            "ozgulluk": round(float(np.mean(~t[~y[ok]])), 3)}
 
 
 def ozet(satirlar, olculer):
@@ -160,23 +99,13 @@ def telefon(ex, alt):
                 continue
             # telefonda taraf etiketten degil hareketten (canlida etiket yok; 0038)
             o = tekrar_olculeri(d["dunya_tam"][sec], MP_YUKARI, ex, None, 10.0,
-                                ayak=d["ayak_dunya"][sec])
+                                ayak=d["ayak_dunya"][sec], P2=d["noktalar"][sec])
             # grup kamera etiketiyle degil tahmini govde acisiyla: canlida da bilinen bu
             aci = float(np.nanmedian([bakis_acisi(P) for P in d["dunya_tam"][sec]]))
             satirlar.append({"kisi": t.kisi, "video": t.video, "tekrar": t.tekrar_no,
                              "kamera": kam, "yon": aci_grubu(aci),
                              "yanlis": not t.dogru, **o})
     return satirlar
-
-
-def yumusat(x, n: int = 3):
-    """Nedensel medyan (son n kare): canlida da ayni sekilde uygulanir."""
-    out = np.array(x, float)
-    for i in range(len(x)):
-        w = x[max(0, i - n + 1):i + 1]
-        w = w[np.isfinite(w)]
-        out[i] = np.median(w) if len(w) else np.nan
-    return out
 
 
 def sayim_verisi(ex):
@@ -195,29 +124,27 @@ def sayim_verisi(ex):
     return out
 
 
+# Eski adlar (deney_antrenor.py kullaniyor)
+yumusat = nedensel_medyan
+
+
 def _esikler(veri):
-    dinlenme, tepe, sure = [], [], []
-    for v in veri:
-        ic = np.zeros(len(v["kare"]), bool)
-        for a, b in v["gercek"]:
-            sec = (v["kare"] >= a) & (v["kare"] <= b)
-            ic |= sec
-            sure.append((b - a) / 30.0)
-            if sec.any() and np.isfinite(v["sinyal"][sec]).any():
-                tepe.append(np.nanmax(v["sinyal"][sec]))
-        dinlenme += v["sinyal"][~ic].tolist()
-    return esikler_ogren(np.array(dinlenme), np.array(tepe), np.array(sure))
+    return sayac_esikleri(veri, kare_hizi=30.0)
 
 
-def sayim_kisi_disarida(veri):
-    """Esikler diger kisilerden; video basina sayim hatasi ve tekrar eslesme orani."""
+def sayim_kisi_disarida(veri, n_yumusat: int = 3):
+    """Esikler diger kisilerden; video basina sayim hatasi ve tekrar eslesme orani.
+
+    `n_yumusat`: nedensel medyan penceresi (1 = ham sinyal; yumusatmanin hatayi
+    gizleyip gizlemedigini gormek icin, Copilot incelemesi).
+    """
     hata, bulunan, toplam, fazla = [], 0, 0, 0
     for k in sorted({v["kisi"] for v in veri}):
         parametre = _esikler([v for v in veri if v["kisi"] != k])
         for v in (v for v in veri if v["kisi"] == k):
             sayac = TekrarSayaci(*parametre)
             biten = [r for r in (sayac.ekle(n / 30.0, x)
-                                 for n, x in zip(v["kare"], yumusat(v["sinyal"]))) if r]
+                                 for n, x in zip(v["kare"], yumusat(v["sinyal"], n_yumusat))) if r]
             hata.append(abs(len(biten) - len(v["gercek"])))
             eslesen = set()
             for bas, son in biten:
@@ -252,6 +179,8 @@ def main():
                               "birlesik": birlesik_kisi_disarida(g, olculer)}
         sayim = sayim_verisi(ex)
         sonuc_sayim = sayim_kisi_disarida(sayim)
+        sonuc_sayim["ham_sinyal"] = sayim_kisi_disarida(sayim, n_yumusat=1)
+        sonuc_sayim["medyan_5"] = sayim_kisi_disarida(sayim, n_yumusat=5)
         # canli mod icin son modeller: aci grubu basina; kisi-disarida AUC >= OLCULEBILIR_AUC
         # olmayan grupta model yok -> canlida "bu acidan olculemez" (0038)
         gruplar = {}

@@ -26,6 +26,7 @@ import numpy as np  # noqa: E402
 import deney_hareket_formu as hf  # noqa: E402
 import deney_hareket_tanima as ht  # noqa: E402
 from eval.hareket import HareketTanima, siniflandirici  # noqa: E402
+from eval.hareket_formu import risk_kapsama  # noqa: E402
 from mono.antrenor import Antrenor  # noqa: E402
 
 ADLAR = hf.ADLAR
@@ -66,6 +67,7 @@ def main():
     X, y, kisi, *_ = ht.rehab24_pencereleri()
     print(f"{len(X)} pencere hazir", flush=True)
     top = defaultdict(lambda: defaultdict(int))
+    risk = defaultdict(list)               # hareket -> [(p_yanlis, gercek yanlis)]
     ornek = []
     for k in sorted(set(kisi)):
         if arg.kisiler and k not in arg.kisiler:
@@ -106,6 +108,7 @@ def main():
                     t["bulunan"] += 1
                     if m["karar"] == "olculemez":
                         continue
+                    risk[ad].append((m["p_yanlis"], not dogru))
                     t["karar"] += 1
                     t["karar_dogru"] += int((m["karar"] == "yanlis") == (not dogru))
                     t["yanlis_etiket"] += int(not dogru)
@@ -119,23 +122,26 @@ def main():
         print(f"kisi {k} bitti", flush=True)
     ad_ = "_".join(arg.kisiler) if arg.kisiler else "hepsi"
     Path(f"out/antrenor_parca_{ad_}.json").write_text(json.dumps(
-        {"top": {a: dict(v) for a, v in top.items()}, "ornek": ornek}, ensure_ascii=False))
+        {"top": {a: dict(v) for a, v in top.items()}, "ornek": ornek, "risk": risk},
+        ensure_ascii=False))
     if not arg.kisiler:
-        ozetle(top, ornek)
+        ozetle(top, ornek, risk)
 
 
 def parcalari_oku():
-    top, ornek = defaultdict(lambda: defaultdict(int)), []
+    top, ornek, risk = defaultdict(lambda: defaultdict(int)), [], defaultdict(list)
     for f in sorted(Path("out").glob("antrenor_parca_*.json")):
         d = json.loads(f.read_text())
         for a, v in d["top"].items():
             for k, x in v.items():
                 top[a][k] += x
+        for a, v in d.get("risk", {}).items():
+            risk[a] += v
         ornek += d["ornek"]
-    return top, ornek[:12]
+    return top, ornek[:12], risk
 
 
-def ozetle(top, ornek):
+def ozetle(top, ornek, risk=None):
     def oran(a, b):
         return round(a / b, 3) if b else None
     sonuc = {ad: {"video": t["video"], "kilit_dogru": oran(t["kilit_dogru"], t["video"]),
@@ -148,6 +154,10 @@ def ozetle(top, ornek):
                   "iyi_ozgullugu": oran(t["dogru_onaylanan"], t["dogru_etiket"]),
                   "karar_verilen_tekrar": t["karar"]}
              for ad, t in top.items()}
+    for ad, v in (risk or {}).items():
+        if ad in sonuc and v:
+            p, y = zip(*v)
+            sonuc[ad]["risk_kapsama"] = risk_kapsama(p, y)
     Path("out/antrenor.json").write_text(json.dumps({"ozet": sonuc, "ornek_bildirim": ornek},
                                                     ensure_ascii=False, indent=1))
     for ad, v in sonuc.items():

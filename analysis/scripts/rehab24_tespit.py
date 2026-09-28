@@ -9,6 +9,8 @@ Degerlendirme ayri betikte (`deney_rehab24_tek_gorus.py`, tespit dosyasi varsa o
         --backend mediapipe --model <pose_landmarker_full.task>
     PYTHONPATH=. <rtmpose-env>/bin/python scripts/rehab24_tespit.py \\
         --backend rtmpose --model <pose.onnx> --detector <detector.onnx>
+    PYTHONPATH=. <mediapipe-env>/bin/python scripts/rehab24_tespit.py \\
+        --backend rtmw --model <rtmw end2end.onnx> --detector <detector.onnx> --adim 3
 
 Video adi veri setinde `<video>` ve `c17` / `c18` iceren dosyadir; kare
 numarasi 30 fps dizinidir (Segmentation.txt).
@@ -27,12 +29,42 @@ import numpy as np  # noqa: E402
 
 from mono.backend import kestirici_olustur  # noqa: E402
 from pose3d.iskelet import REFERANS_ISKELET, eslestir  # noqa: E402
+from pose3d.tam_vucut import bos_poz  # noqa: E402
 from veri.rehab24 import tekrarlar_oku  # noqa: E402
 
 KOK = Path(__file__).resolve().parent.parent
 VERI = KOK / "data/dis/rehab24_6"
 # Veri setindeki dosya adlari: Ex6/PM_008-Camera17-30fps.mp4, ...-Camera18-30fps-transposed.mp4
 _KAMERA_ADI = {"c17": "Camera17", "c18": "Camera18"}
+
+
+class _RTMWReferans:
+    """RTMW (tam vucut) -> en buyuk kutudaki kisi -> bitirme-13 (`referansa_indir`).
+
+    Gorunurluk RTMW'nin kendi esigiyle (`RTMW_GUVEN_ESIGI`, 0035); RTMPose ve
+    MediaPipe ile ayni dosya bicimi.
+    """
+
+    def __init__(self, detector, model):
+        from mono.rtmw_model import RTMWEstimator
+        self._m = RTMWEstimator(detector, model)
+        self.model_id = self._m.model_id
+
+    def __call__(self, im):
+        from pose3d.tam_vucut import referansa_indir
+        kisiler = self._m.kisiler(im)
+        if not kisiler:
+            poz = referansa_indir(bos_poz((im.shape[1], im.shape[0]), self.model_id))
+            return replace(poz, tespit=False)
+        alan = [(k.ek["kutu"][2] - k.ek["kutu"][0]) * (k.ek["kutu"][3] - k.ek["kutu"][1])
+                for k in kisiler]
+        return referansa_indir(kisiler[int(np.argmax(alan))])
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._m.close()
 
 
 def video_bul(video: str, kamera: str) -> Path:
@@ -46,9 +78,10 @@ def video_bul(video: str, kamera: str) -> Path:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--backend", choices=("mediapipe", "rtmpose"), required=True)
+    p.add_argument("--backend", choices=("mediapipe", "rtmpose", "rtmw"), required=True)
     p.add_argument("--model", required=True)
     p.add_argument("--detector")
+    p.add_argument("--adim", type=int, default=1, help="yalniz kare % adim == 0 (RTMW yavas)")
     p.add_argument("--video", help="yalnizca bu video (deneme icin)")
     p.add_argument("--egzersiz", type=int, default=6, help="REHAB24 egzersiz no (6 squat, 5 lunge)")
     a = p.parse_args()
@@ -61,11 +94,13 @@ def main() -> None:
     n = len(REFERANS_ISKELET)
     # RTMPose dedektoru birden fazla kisi bulursa en buyuk kutu (yer gercegine bakmaz).
     coklu = "en_buyuk" if a.backend == "rtmpose" else "hata"
-    with kestirici_olustur(a.backend, model=a.model, detector=a.detector,
-                           coklu_kisi=coklu) as model:
+    model_ctx = (_RTMWReferans(a.detector, a.model) if a.backend == "rtmw" else
+                 kestirici_olustur(a.backend, model=a.model, detector=a.detector,
+                                   coklu_kisi=coklu))
+    with model_ctx as model:
         for video in videolar:
             kareler = sorted({k for t in tekrarlar if t.video == video
-                              for k in range(t.ilk, t.son + 1)})
+                              for k in range(t.ilk, t.son + 1) if k % a.adim == 0})
             istenen = set(kareler)
             for kamera in ("c17", "c18"):
                 hedef = cikti / f"{video}-{kamera}.npz"

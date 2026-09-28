@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Antrenör Paneli</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --kart: #ffffff; --metin: #1c2330; --soluk: #5f6b7a;
+    --cizgi: #e2e6eb; --iyi: #1f8a4c; --kotu: #c2352b;
+    --kotu-zemin: #fdecea; --uyari-zemin: #fff4e0; --uyari: #9a5b00;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #11151b; --kart: #1a2029; --metin: #e6eaf0; --soluk: #9aa5b4;
+      --cizgi: #2a323d; --iyi: #4cc38a; --kotu: #ff6b60;
+      --kotu-zemin: #3a1f1d; --uyari-zemin: #3a2d14; --uyari: #f2b44c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #11151b; --kart: #1a2029; --metin: #e6eaf0; --soluk: #9aa5b4;
+    --cizgi: #2a323d; --iyi: #4cc38a; --kotu: #ff6b60;
+    --kotu-zemin: #3a1f1d; --uyari-zemin: #3a2d14; --uyari: #f2b44c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--metin);
+         font: 15px/1.45 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 16px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+           margin-bottom: 16px; }
+  h1 { font-size: 20px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+       color: var(--soluk); margin: 24px 0 8px; }
+  .baglanti { font-size: 13px; color: var(--soluk); display: flex; align-items: center; gap: 6px; }
+  .nokta { width: 9px; height: 9px; border-radius: 50%; background: var(--kotu); }
+  .nokta.acik { background: var(--iyi); }
+  .uyarilar { display: grid; gap: 8px; }
+  .uyari { background: var(--uyari-zemin); border-left: 4px solid var(--uyari);
+           padding: 10px 12px; border-radius: 8px; overflow-wrap: anywhere; }
+  .uyari small { color: var(--soluk); display: block; }
+  .bos { color: var(--soluk); font-size: 14px; margin: 0; }
+  .kisiler { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .kisi { background: var(--kart); border: 1px solid var(--cizgi); border-radius: 10px; padding: 12px; }
+  .kisi.problemli { border-color: var(--kotu); background: var(--kotu-zemin); }
+  .ust { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .ad { font-weight: 600; }
+  .istasyon { color: var(--soluk); font-size: 13px; }
+  .hareket { margin: 6px 0; font-size: 17px; }
+  .sayilar { display: flex; flex-wrap: wrap; gap: 14px; font-size: 14px; }
+  .sayilar b { font-variant-numeric: tabular-nums; }
+  .iyi { color: var(--iyi); } .kotu { color: var(--kotu); }
+  .ipucu { margin-top: 6px; font-size: 14px; color: var(--soluk); }
+  .etiket { font-size: 12px; font-weight: 600; color: var(--kotu); }
+  ol.akis { list-style: none; padding: 0; margin: 0; font-size: 13px; color: var(--soluk);
+            max-height: 260px; overflow-y: auto; }
+  ol.akis li { padding: 4px 0; border-bottom: 1px solid var(--cizgi); overflow-wrap: anywhere; }
+  footer { margin-top: 24px; font-size: 12px; color: var(--soluk); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Antrenör paneli</h1>
+    <span class="baglanti"><span class="nokta" id="nokta"></span><span id="durum">bağlanıyor</span></span>
+  </header>
+
+  <h2>Uyarılar</h2>
+  <div class="uyarilar" id="uyarilar"><p class="bos">Şu an formu sorunlu üye yok.</p></div>
+
+  <h2>Kişiler</h2>
+  <div class="kisiler" id="kisiler"><p class="bos">Henüz kimse görülmedi.</p></div>
+
+  <h2>Olay akışı</h2>
+  <ol class="akis" id="akis"></ol>
+
+  <footer>Kişiler anonimdir (oturum içi takip numarası). Uyarı: son 3 kararlı tekrarın
+    en az 2'si "düzelt". Klinik değerlendirme değildir.</footer>
+</main>
+<script>
+  const HAREKET = { squat: "Squat", lunge: "Lunge", sinav: "Şınav", kol_vw: "Kol V-W",
+    kol_abduksiyonu: "Kol abdüksiyonu", bacak_abduksiyonu: "Bacak abdüksiyonu" };
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const saat = (z) => { try { return new Date(z).toLocaleTimeString("tr-TR"); } catch { return ""; } };
+
+  function kisileriCiz(liste) {
+    const kap = $("kisiler");
+    if (!liste.length) { kap.innerHTML = '<p class="bos">Henüz kimse görülmedi.</p>'; return; }
+    kap.innerHTML = liste.map((k) => `
+      <article class="kisi${k.problemli ? " problemli" : ""}">
+        <div class="ust"><span class="ad">Kişi #${esc(k.kisi)}</span>
+          <span class="istasyon">${esc(k.istasyon)}</span></div>
+        <div class="hareket">${esc(HAREKET[k.hareket] || k.hareket || "—")}
+          ${k.problemli ? '<span class="etiket">· formu kontrol et</span>' : ""}</div>
+        <div class="sayilar"><span>Tekrar <b>${esc(k.tekrar)}</b></span>
+          <span class="iyi">İyi <b>${esc(k.iyi)}</b></span>
+          <span class="kotu">Düzelt <b>${esc(k.duzelt)}</b></span></div>
+        ${k.son_ipucu ? `<div class="ipucu">Son ipucu: ${esc(k.son_ipucu)}</div>` : ""}
+      </article>`).join("");
+  }
+
+  async function durumuYenile() {
+    try { const r = await fetch("/durum"); kisileriCiz((await r.json()).kisiler); } catch (e) {}
+  }
+
+  function uyariEkle(o) {
+    const kap = $("uyarilar");
+    if (kap.querySelector(".bos")) kap.innerHTML = "";
+    const d = document.createElement("div");
+    d.className = "uyari";
+    d.innerHTML = `${esc(o.metin)}<small>${saat(o.zaman)}</small>`;
+    kap.prepend(d);
+    while (kap.children.length > 20) kap.lastChild.remove();
+  }
+
+  function akisaEkle(o) {
+    const li = document.createElement("li");
+    const kim = o.kaynak ? `${o.kaynak.istasyon} #${o.kisi}` : `${o.istasyon} #${o.kisi}`;
+    li.textContent = `${saat(o.zaman)}  ${kim}  ${o.metin}`;
+    $("akis").prepend(li);
+    while ($("akis").children.length > 200) $("akis").lastChild.remove();
+  }
+
+  let bekleyen = null;
+  function baglan() {
+    const es = new EventSource("/olaylar");
+    es.onopen = () => { $("nokta").classList.add("acik"); $("durum").textContent = "canlı"; };
+    es.onerror = () => { $("nokta").classList.remove("acik"); $("durum").textContent = "yeniden bağlanıyor"; };
+    es.onmessage = (e) => {
+      const o = JSON.parse(e.data);
+      if (o.tur === "uyari") uyariEkle(o);
+      akisaEkle(o);
+      clearTimeout(bekleyen);
+      bekleyen = setTimeout(durumuYenile, 150);
+    };
+  }
+  durumuYenile();
+  baglan();
+</script>
+</body>
+</html>

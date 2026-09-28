@@ -365,12 +365,36 @@ def kutu_dunya(mp_model, im, kutu, pay: float = 0.15):
     return np.array(ek["world_points_all_m"], float), np.array(ek["ayak_dunya_m"], float)
 
 
+class OlayYazici:
+    """Antrenor bildirimlerini ortak olay semasinda (`mono.olay`, 0042) JSONL'e ekler."""
+
+    def __init__(self, yol, *, yuzey: str, istasyon: str, kamera: str, model_surumu: str):
+        self._f = open(yol, "a", encoding="utf-8")
+        self.kaynak = {"yuzey": yuzey, "istasyon": istasyon, "kamera": kamera,
+                       "model_surumu": model_surumu}
+
+    def yaz(self, b: dict) -> None:
+        import json
+
+        from mono.olay import olay_yap
+        self._f.write(json.dumps(olay_yap(b, **self.kaynak), ensure_ascii=False) + "\n")
+        self._f.flush()                      # panel servisi satiri hemen gorsun
+
+    def close(self) -> None:
+        self._f.close()
+
+
+def model_surumu(*yollar) -> str:
+    """Model dosyalarinin kisa ozeti (olaylar hangi modelle uretildi)."""
+    import hashlib
+    return "+".join(f"{Path(y).stem}:{hashlib.sha256(Path(y).read_bytes()).hexdigest()[:8]}"
+                    for y in yollar if y)
+
+
 def _bildir(b: dict, kayit) -> None:
     print(f"[{b['t']:7.1f} s] #{b['kimlik']} {b['metin']}", flush=True)
     if kayit is not None:
-        import json
-        kayit.write(json.dumps({k: v for k, v in b.items() if k != "olculer"},
-                               ensure_ascii=False, default=float) + "\n")
+        kayit.yaz(b)
 
 
 def antrenor_karesi(ant, mp_model, im, t: float, eslesen: list, son_mesaj: dict,
@@ -420,9 +444,13 @@ def coklu_main(a) -> None:
         from mono.backend import kestirici_olustur
         if not (a.hareket_modeli and a.form_modelleri):
             raise SystemExit("--antrenor icin --hareket-modeli ve --form-modelleri gerekli")
-        ant = Antrenor(HareketTanima(joblib.load(a.hareket_modeli)), joblib.load(a.form_modelleri))
+        ant = Antrenor(HareketTanima(joblib.load(a.hareket_modeli)), joblib.load(a.form_modelleri),
+                       kararsiz_bant=a.kararsiz_bant)
         mp_model = kestirici_olustur("mediapipe", model=a.model)
-        kayit = open(a.bildirim_kaydi, "a", encoding="utf-8") if a.bildirim_kaydi else None
+        kayit = (OlayYazici(a.bildirim_kaydi, yuzey=a.yuzey, istasyon=a.istasyon,
+                            kamera=str(a.video.name if a.video else a.kamera),
+                            model_surumu=model_surumu(a.hareket_modeli, a.form_modelleri))
+                 if a.bildirim_kaydi else None)
     son_mesaj: dict[int, tuple[float, str]] = {}
     yazici, son, kare_no = None, [], 0
     t0 = time.monotonic()
@@ -496,7 +524,13 @@ def main(argv=None) -> None:
                    help="--coklu-kisi ile: tekrar sayimi, tekrar karari ve ipucu (0040)")
     p.add_argument("--form-modelleri", type=Path,
                    help="hareket formu modelleri (.joblib, scripts/deney_hareket_formu.py)")
-    p.add_argument("--bildirim-kaydi", type=Path, help="bildirimleri bu JSONL dosyasina ekle")
+    p.add_argument("--kararsiz-bant", type=float, default=0.0,
+                   help="|p - 0,5| bundan kucukse tekrar karari yok ('emin degilim')")
+    p.add_argument("--bildirim-kaydi", type=Path,
+                   help="olaylari bu JSONL dosyasina ekle (mono.olay semasi; panel: make panel)")
+    p.add_argument("--yuzey", choices=("mobil", "salon"), default="salon",
+                   help="olay kaynagi: kullanicinin telefonu ya da salon kamerasi")
+    p.add_argument("--istasyon", default="istasyon-1", help="salonda istasyon adi")
     p.add_argument("--tespit-sikligi", type=int, default=3,
                    help="dedektor kac karede bir calissin (--coklu-kisi)")
     a = p.parse_args(argv)

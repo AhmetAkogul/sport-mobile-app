@@ -192,13 +192,57 @@ def diz_parmak_onde(X, ayak, yukari, taraf):
     return np.sum(d * f, -1) / kaval
 
 
+def diz_parmak_onde_2b(P2: np.ndarray, taraf: str) -> np.ndarray:
+    """`diz_parmak_onde`'nin goruntu duzlemi karsiligi: (T, 65, 2) TAM_VUCUT piksel.
+
+    Kamera yatay kabul edilir; ayak yonu = tekrar boyunca (bas parmak - ayak
+    bilegi) x bileseninin isareti. Dizin bas parmagi o yonde gecmesi / 2B kaval.
+    Yandan telefon lunge'ta fizyoterapisti mocap kadar ayiriyordu (AUC 0,85,
+    `docs/deney/2026-09-28-ec3d-lunge.md`); onden ayak yonu belirsiz -> anlamsiz.
+    """
+    from pose3d.tam_vucut import TAM_VUCUT
+    k = P2[:, TAM_VUCUT.indeks(f"{taraf}_diz")]
+    a = P2[:, TAM_VUCUT.indeks(f"{taraf}_ayak_bilegi")]
+    uc = P2[:, TAM_VUCUT.indeks(f"{taraf}_bas_parmak")]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        yon = np.sign(np.nanmedian(uc[:, 0] - a[:, 0]))
+        kaval = np.nanmedian(np.linalg.norm(k - a, axis=-1))
+    if not (np.isfinite(yon) and yon != 0 and np.isfinite(kaval) and kaval > 0):
+        return np.full(len(P2), np.nan)
+    return (k[:, 0] - uc[:, 0]) * yon / kaval
+
+
+def ondeki_bacak_2b(P2: np.ndarray) -> str | None:
+    """Lunge'ta ondeki bacak: ayak yonunde bilegi daha onde olan (goruntu x'i).
+
+    Dizi daha cok bukulen bacak degil: lunge'ta arka diz de ~90 derece bukulur.
+    """
+    from pose3d.tam_vucut import TAM_VUCUT
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        yon = np.sign(np.nanmedian(np.concatenate([
+            P2[:, TAM_VUCUT.indeks(f"{t}_bas_parmak"), 0]
+            - P2[:, TAM_VUCUT.indeks(f"{t}_ayak_bilegi"), 0] for t in ("sag", "sol")])))
+        if not np.isfinite(yon) or yon == 0:
+            return None
+        ileri = {t: np.nanmedian(P2[:, TAM_VUCUT.indeks(f"{t}_ayak_bilegi"), 0]) * yon
+                 for t in ("sag", "sol")}
+    if not all(np.isfinite(v) for v in ileri.values()):
+        return None
+    return max(ileri, key=ileri.get)
+
+
 def tekrar_olculeri(X: np.ndarray, yukari, egzersiz: int, taraf: str | None,
-                    kare_hizi: float, ayak: np.ndarray | None = None) -> dict[str, float]:
+                    kare_hizi: float, ayak: np.ndarray | None = None,
+                    P2: np.ndarray | None = None) -> dict[str, float]:
     """(T, 13, 3) tekrar -> {olcu: skor}; her skor "buyukse yanlis" yonunde.
 
     `egzersiz`: REHAB24 1 kol abduksiyonu, 2 kol VW, 3 sinav, 4 bacak abduksiyonu,
     5 lunge, 6 squat. `taraf`: aktif kol/bacak ("sag" | "sol"); VW, sinav ve
     squat'ta kullanilmaz, lunge'ta verilmezse dizi daha cok bukulen bacak.
+    `P2`: istege bagli (T, 65, 2) goruntu noktalari (TAM_VUCUT); lunge/squat'ta
+    `diz_parmak_onde_2b` icin. Yoksa o olcu NaN.
     """
     n = max(int(round(0.2 * kare_hizi)), 1)
 
@@ -250,8 +294,13 @@ def tekrar_olculeri(X: np.ndarray, yukari, egzersiz: int, taraf: str | None,
                       np.nanmax([diz_parmak_onde(X, ayak, u, t) for t in bacaklar], axis=0))
             onde = np.nanmax([diz_onde(X, u, t) for t in bacaklar], axis=0)
             ice = np.nanmax([diz_ice(X, u, t) for t in bacaklar], axis=0)
+            parmak2 = (np.full(len(X), np.nan) if P2 is None else
+                       np.nanmax([diz_parmak_onde_2b(P2, t) for t in
+                                  ((ondeki_bacak_2b(P2) or taraf,) if egzersiz == 5
+                                   else bacaklar)], axis=0))
         return {"sig": -s(bukulme), "derin": s(bukulme), "govde_egimi": s(govde_egimi(X, u)),
-                "diz_onde": s(onde), "diz_parmak_onde": s(parmak), "diz_ice": s(ice)}
+                "diz_onde": s(onde), "diz_parmak_onde": s(parmak), "diz_ice": s(ice),
+                "diz_parmak_onde_2b": s(parmak2)}
     raise ValueError(f"desteklenmeyen egzersiz: {egzersiz}")
 
 
@@ -379,3 +428,109 @@ def esikler_ogren(dinlenme: np.ndarray, tepeler: np.ndarray,
     """
     r, p = float(np.nanmedian(dinlenme)), float(np.nanmedian(tepeler))
     return r + 0.4 * (p - r), 0.3 * (p - r), 0.5 * float(np.median(sureler_s))
+
+
+# --- Tekrar karari ve sayac egitimi (0038; eskiden scripts/deney_hareket_formu.py) ---
+
+# Bir (hareket, aci) grubu, kisi-disarida AUC bu degerin altindaysa "olculemez".
+OLCULEBILIR_AUC = 0.70
+
+
+def esik_kurali(egitim_x, egitim_y):
+    """Youden J'yi en buyuten esik (x > esik -> yanlis)."""
+    x, y = np.asarray(egitim_x, float), np.asarray(egitim_y, bool)
+    ok = np.isfinite(x)
+    x, y = x[ok], y[ok]
+    if not len(x) or y.all() or not y.any():
+        return np.inf
+    aday = np.unique(x)
+    j = [np.mean(x[y] > t) - np.mean(x[~y] > t) for t in aday]
+    return float(aday[int(np.argmax(j))])
+
+def kisi_disarida_dogruluk(satirlar, olcu):
+    """Her kisi icin esik diger kisilerden; dogruluk, duyarlilik, ozgulluk."""
+    tahmin, gercek = [], []
+    for k in sorted({s["kisi"] for s in satirlar}):
+        eg = [s for s in satirlar if s["kisi"] != k]
+        te = [s for s in satirlar if s["kisi"] == k and np.isfinite(s[olcu])]
+        t = esik_kurali([s[olcu] for s in eg], [s["yanlis"] for s in eg])
+        tahmin += [s[olcu] > t for s in te]
+        gercek += [s["yanlis"] for s in te]
+    tahmin, gercek = np.array(tahmin, bool), np.array(gercek, bool)
+    if not len(gercek):
+        return None
+    return {"dogruluk": round(float(np.mean(tahmin == gercek)), 3), "n": int(len(gercek)),
+            "duyarlilik": round(float(np.mean(tahmin[gercek])), 3) if gercek.any() else None,
+            "ozgulluk": round(float(np.mean(~tahmin[~gercek])), 3) if (~gercek).any() else None}
+
+def birlesik_model():
+    """Butun olculer: eksik -> medyan, olcekleme, dengeli lojistik regresyon."""
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+    return make_pipeline(SimpleImputer(strategy="median", keep_empty_features=True),
+                         StandardScaler(), LogisticRegression(C=0.5, class_weight="balanced",
+                                                              max_iter=1000))
+
+def birlesik_kisi_disarida(satirlar, olculer):
+    """Butun olculeri birlestiren model, kisi-disarida: AUC ve 0,5 esikte dogruluk."""
+    X = np.array([[s[o] for o in olculer] for s in satirlar], float)
+    y = np.array([s["yanlis"] for s in satirlar], bool)
+    kisi = np.array([s["kisi"] for s in satirlar])
+    p = np.full(len(y), np.nan)
+    for k in sorted(set(kisi)):
+        te = kisi == k
+        if y[~te].all() or not y[~te].any():
+            continue
+        p[te] = birlesik_model().fit(X[~te], y[~te]).predict_proba(X[te])[:, 1]
+    ok = np.isfinite(p)
+    if not ok.any():
+        return None
+    a = auc(p[ok & y], p[ok & ~y])
+    t = p[ok] > 0.5
+    return {"auc": None if a is None else round(a, 3),
+            "dogruluk": round(float(np.mean(t == y[ok])), 3), "n": int(ok.sum()),
+            "duyarlilik": round(float(np.mean(t[y[ok]])), 3),
+            "ozgulluk": round(float(np.mean(~t[~y[ok]])), 3)}
+
+def nedensel_medyan(x, n: int = 3):
+    """Nedensel medyan (son n kare): canlida da ayni sekilde uygulanir."""
+    out = np.array(x, float)
+    for i in range(len(x)):
+        w = x[max(0, i - n + 1):i + 1]
+        w = w[np.isfinite(w)]
+        out[i] = np.median(w) if len(w) else np.nan
+    return out
+
+def sayac_esikleri(veri, kare_hizi: float = 30.0):
+    """Tekrar sayaci esikleri, etiketli videolardan: her oge {"kare", "gercek": [(ilk, son)],
+    "sinyal"}; gercek tekrar disi dinlenme, tekrar ici tepe ve sure `esikler_ogren`'e."""
+    dinlenme, tepe, sure = [], [], []
+    for v in veri:
+        ic = np.zeros(len(v["kare"]), bool)
+        for a, b in v["gercek"]:
+            sec = (v["kare"] >= a) & (v["kare"] <= b)
+            ic |= sec
+            sure.append((b - a) / kare_hizi)
+            if sec.any() and np.isfinite(v["sinyal"][sec]).any():
+                tepe.append(np.nanmax(v["sinyal"][sec]))
+        dinlenme += v["sinyal"][~ic].tolist()
+    return esikler_ogren(np.array(dinlenme), np.array(tepe), np.array(sure))
+
+
+def risk_kapsama(p, y, bantlar=(0.0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3)) -> list[dict]:
+    """Secici karar: |p - 0,5| < bant ise karar yok. Bant basina kapsama ve dogruluk.
+
+    `p`: "yanlis" olasiligi, `y`: gercek "yanlis" etiketi. Kapsama, karar
+    verilen oran; dogruluk yalniz karar verilenlerde. Copilot incelemesi (0040).
+    """
+    p, y = np.asarray(p, float), np.asarray(y, bool)
+    out = []
+    for b in bantlar:
+        karar = np.abs(p - 0.5) >= b
+        n = int(karar.sum())
+        out.append({"bant": b, "kapsama": round(float(karar.mean()), 3) if len(p) else None,
+                    "dogruluk": round(float(np.mean((p[karar] > 0.5) == y[karar])), 3)
+                    if n else None, "n": n})
+    return out

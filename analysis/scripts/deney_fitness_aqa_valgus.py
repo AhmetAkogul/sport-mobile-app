@@ -89,6 +89,11 @@ def ozet(satirlar: list[dict], anahtar: str) -> dict:
 
 
 def main() -> None:
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--son-olcum", action="store_true",
+                    help="resmi test bolumunu da isle (0034 Karar 4: yalniz bir kez, son olcumde)")
+    son_olcum = ap.parse_args().son_olcum
     rehab = json.loads((KOK / "out/rehab24_tek_gorus.json").read_text())
     dogru = rehab.get("aci_kayma_dogrusu", {}).get(YONTEM)
     if dogru is None:
@@ -100,6 +105,8 @@ def main() -> None:
 
     satirlar, eksik = [], 0
     for anahtar, araliklar in sorted(etiket.items()):
+        if anahtar in test and not son_olcum:
+            continue                     # 0034 Karar 4: test bolumu son olcume saklanir
         yol = TESPIT / f"{anahtar}.npz"
         if not yol.exists():
             eksik += 1
@@ -143,7 +150,8 @@ def main() -> None:
         "esik_derece": esik, "kusur_suresi_kare": gerekli,
         "eksik_tespit": eksik,
         "tamami": kume(satirlar),
-        "test_bolumu": kume([s for s in satirlar if s["test_bolumu"]]),
+        "test_bolumu": (kume([s for s in satirlar if s["test_bolumu"]]) if son_olcum
+                        else "saklandi (0034 Karar 4; --son-olcum)"),
         "aci_dilimi": {f"{lo}-{min(hi, 90):.0f}": kume(
             [s for s in satirlar if lo <= s["govde_acisi_derece"] < hi])
             for lo, hi in ACI_DILIMLERI},
@@ -159,7 +167,7 @@ def main() -> None:
         json.dumps(tg._temiz(satirlar), ensure_ascii=False, indent=1, allow_nan=False),
         encoding="utf-8")
     print("eksik tespit:", eksik, "| govde acisi:", sonuc["govde_acisi_derece"])
-    for ad in ("tamami", "test_bolumu"):
+    for ad in ("tamami", "test_bolumu") if son_olcum else ("tamami",):
         for a, o in sonuc[ad].items():
             print(f"{ad:12s} {a:4s}", o)
     for dilim, v in sonuc["aci_dilimi"].items():

@@ -12,7 +12,8 @@ Adimlar (0039):
    yontemin (epipolar yakinlik + kumeleme; Dong ve ark. 2019, MVPose) yalin
    bir surumudur; yeni yontem degildir.
 3. Kume basina `iskelet_ucgenle` (saglam mod) -> TAM_VUCUT 3B (eller, ayaklar dahil).
-4. **3B kimlik** (`Takip3B`): kareler arasi pelvis mesafesiyle Macar eslemesi.
+4. **3B kimlik** (`Takip3B`): kareler arasi govde merkezi (`takip_merkezi`)
+   mesafesiyle Macar eslemesi.
 """
 
 from __future__ import annotations
@@ -107,10 +108,10 @@ def kisileri_esle(kalib: Kalibrasyon, kameralar: dict[int, list[Poz2B]],
 
 def kisileri_ucgenle(kalib: Kalibrasyon, kameralar: dict[int, list[Poz2B]],
                      kumeler: list[dict[int, int]], *, saglam: bool = True,
-                     esik_px: float = 8.0) -> list[Iskelet3B]:
+                     esik_px: float = 8.0, skor_us: float | None = None) -> list[Iskelet3B]:
     """Kume basina TAM_VUCUT 3B iskelet (kamera 0 cercevesi, kalibrasyon birimi)."""
     return [iskelet_ucgenle(kalib, {k: kameralar[k][a] for k, a in kume.items()}, TAM_VUCUT,
-                            saglam=saglam, esik_px=esik_px)
+                            saglam=saglam, esik_px=esik_px, skor_us=skor_us)
             for kume in kumeler]
 
 
@@ -160,32 +161,62 @@ def pelvis(isk: Iskelet3B) -> np.ndarray:
     return G.mean(0) if len(G) else np.full(3, np.nan)
 
 
-class Takip3B:
-    """3B iskeletlere kareler arasi kimlik: pelvis mesafesiyle Macar eslemesi.
+def takip_merkezi(isk: Iskelet3B, en_az: int = 3) -> np.ndarray:
+    """Gorunur govde eklemlerinin medyani; `en_az`'dan azsa `pelvis`.
 
+    Pelvis yalniz iki kalca ekleminden gelir; Panoptic'te bir kamera kumesinde
+    kalcalar yanlis ucgenlenince pelvis tek karede ~0,5 m derinlikte ziplayip
+    kapiyi asiyor ve yeni kimlik aciliyordu (kalan 5 kimlik degisiminin hepsi).
+    Medyan, birkac yanlis eklemden etkilenmez.
+    """
+    G = isk.noktalar[GOVDE]
+    G = G[np.isfinite(G).all(1)]
+    return np.median(G, 0) if len(G) >= en_az else pelvis(isk)
+
+
+def iskelet_uzakligi(a: np.ndarray, b: np.ndarray, en_az: int = 3) -> float:
+    """Iki iskeletin ikisinde de gorunen govde eklemlerinin uzakliklarinin medyani.
+
+    Merkez karsilastirmasi gorunur eklem kumesi degisince kayar (29 Eylul:
+    agirlikli ucgenlemede bir kiside yalniz ust govde kalinca merkez 0,5 m
+    zipladi, 4 kimlik degisimi); ortak eklem uzerinden medyan hem bu kaymaya
+    hem birkac yanlis ekleme dayanikli. Ortak eklem `en_az`'dan azsa inf.
+    """
+    d = np.linalg.norm(a - b, axis=1)
+    d = d[np.isfinite(d)]
+    return float(np.median(d)) if len(d) >= en_az else float("inf")
+
+
+class Takip3B:
+    """3B iskeletlere kareler arasi kimlik: ortak govde eklemleri uzerinden Macar eslemesi.
+
+    Maliyet `iskelet_uzakligi` (ortak eklem yoksa `takip_merkezi` farki).
     `kapi_m`: bu mesafeden uzak eslesme yapilmaz; `kayip_kare` kare gorulmeyen
     kimlik biter. Kimlik 1'den baslar.
     """
 
     def __init__(self, kapi_m: float = 0.5, kayip_kare: int = 30):
         self.kapi_m, self.kayip_kare = kapi_m, kayip_kare
-        self._iz: dict[int, tuple[np.ndarray, int]] = {}      # kimlik -> (pelvis, son kare)
+        # kimlik -> (govde eklemleri (G, 3), merkez, son kare)
+        self._iz: dict[int, tuple[np.ndarray, np.ndarray, int]] = {}
         self._sonraki, self._kare = 1, 0
 
     def guncelle(self, iskeletler: list[Iskelet3B]) -> list[tuple[int, Iskelet3B]]:
         self._kare += 1
-        self._iz = {k: v for k, v in self._iz.items() if self._kare - v[1] <= self.kayip_kare}
-        P = [pelvis(s) for s in iskeletler]
+        self._iz = {k: v for k, v in self._iz.items() if self._kare - v[2] <= self.kayip_kare}
+        G = [np.asarray(s.noktalar, float)[GOVDE] for s in iskeletler]
+        M = [takip_merkezi(s) for s in iskeletler]
         kim = list(self._iz)
-        C = np.full((len(P), len(kim)), 1e9)
-        for a, p in enumerate(P):
+        C = np.full((len(G), len(kim)), 1e9)
+        for a in range(len(G)):
             for b, k in enumerate(kim):
-                if np.isfinite(p).all():
-                    d = float(np.linalg.norm(p - self._iz[k][0]))
-                    if d <= self.kapi_m:
-                        C[a, b] = d
+                d = iskelet_uzakligi(G[a], self._iz[k][0])
+                if not np.isfinite(d) and np.isfinite(M[a]).all():
+                    d = float(np.linalg.norm(M[a] - self._iz[k][1]))
+                if d <= self.kapi_m:
+                    C[a, b] = d
         atama = {}
-        if len(P) and len(kim):
+        if len(G) and len(kim):
             for a, b in zip(*linear_sum_assignment(C)):
                 if C[a, b] < 1e9:
                     atama[a] = kim[b]
@@ -194,7 +225,10 @@ class Takip3B:
             if a not in atama:
                 atama[a] = self._sonraki
                 self._sonraki += 1
-            if np.isfinite(P[a]).all():
-                self._iz[atama[a]] = (P[a], self._kare)
+            if np.isfinite(M[a]).all():
+                eski = self._iz.get(atama[a])
+                # bu karede gorulmeyen eklem son bilinen konumunu korur
+                g = G[a] if eski is None else np.where(np.isfinite(G[a]), G[a], eski[0])
+                self._iz[atama[a]] = (g, M[a], self._kare)
             out.append((atama[a], s))
         return out

@@ -107,3 +107,38 @@ def test_bolunen_kisi_birlesir_ve_pelvis_yedegi():
     class _Kalcasiz:
         noktalar = B
     assert np.isfinite(pelvis(_Kalcasiz)).all()
+
+
+def test_takip3b_kalca_sicramasi_kimligi_bozmaz():
+    """Panoptic hatasi: yalniz iki kalca 0,6 m zipladiginda pelvis kapiyi asiyordu."""
+    rng = np.random.default_rng(4)
+
+    class _Isk:
+        def __init__(self, P):
+            self.noktalar = P
+    A = _kisi(0, rng)
+    B = A.copy()
+    for ad in ("sol_kalca", "sag_kalca"):
+        B[TAM_VUCUT.indeks(ad)] += [0, 0, 0.6]
+    t = Takip3B(kapi_m=0.5)
+    assert [k for k, _ in t.guncelle([_Isk(A)])] == [1]
+    assert [k for k, _ in t.guncelle([_Isk(B)])] == [1]
+    assert np.linalg.norm(pelvis(_Isk(B)) - pelvis(_Isk(A))) > 0.5     # eski kural kopardi
+
+
+def test_takip3b_gorunur_eklem_kumesi_degisince_kimlik_surer():
+    """29 Eylul: yalniz ust govde gorununce merkez kaydi; ortak eklem uzakligi kaymaz."""
+    rng = np.random.default_rng(5)
+
+    class _Isk:
+        def __init__(self, P):
+            self.noktalar = P
+    A = _kisi(0, rng)
+    B = A.copy()
+    for ad in ("sol_kalca", "sag_kalca", "sol_diz", "sag_diz", "sol_ayak_bilegi",
+               "sag_ayak_bilegi"):
+        B[TAM_VUCUT.indeks(ad)] = np.nan
+    t = Takip3B(kapi_m=0.3)
+    assert [k for k, _ in t.guncelle([_Isk(A)])] == [1]
+    assert [k for k, _ in t.guncelle([_Isk(B)])] == [1]
+    assert [k for k, _ in t.guncelle([_Isk(A)])] == [1]

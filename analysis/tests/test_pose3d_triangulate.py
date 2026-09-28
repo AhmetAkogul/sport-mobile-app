@@ -181,3 +181,21 @@ def test_ucgenleme_sekil_dogrulamasi():
     with pytest.raises(ValueError, match="kovaryans"):
         Ucgenleme(nokta=np.zeros(3), goren_kamera=2, artik_px=0.1,
                   kovaryans=np.zeros((2, 2)))
+
+
+def test_agirlik_bozuk_kameranin_etkisini_azaltir(duzenek):
+    """0039: kamera agirligi (or. ham skor**2) bozuk goruntunun payini kucultur."""
+    kameralar, kalib = duzenek
+    noktalar, _ = olculu_cubuk(uzunluk_m=1.0, n_isaret=2)
+    gozlem = dict(nokta_gozlemleri(kameralar, noktalar, seed=2)[0])
+    gercek = dunyadan_kamera0(kameralar, noktalar)[0]
+    bozuk = sorted(gozlem)[0]
+    gozlem[bozuk] = np.asarray(gozlem[bozuk], float) + [15.0, 0.0]
+    esit = ucgenle(kalib, gozlem)
+    w = {k: (0.1 if k == bozuk else 1.0) for k in gozlem}
+    agirlikli = ucgenle(kalib, gozlem, agirliklar=w)
+    assert np.linalg.norm(agirlikli.nokta - gercek) < 0.5 * np.linalg.norm(esit.nokta - gercek)
+    birim = ucgenle(kalib, gozlem, agirliklar={k: 3.0 for k in gozlem})
+    np.testing.assert_allclose(birim.nokta, esit.nokta, atol=1e-9)     # olcek bagimsiz
+    with pytest.raises(ValueError):
+        ucgenle(kalib, gozlem, agirliklar={k: 0.0 for k in gozlem})

@@ -138,3 +138,71 @@ def test_aktif_taraf_hareketten():
         a = np.radians(9 * i)
         X[i, J("sol_dirsek")] = X[i, J("sol_omuz")] + 0.3 * np.array([np.sin(a), -np.cos(a), 0])
     assert aktif_taraf(X, U, 1) == "sol"
+
+
+def test_esik_kurali_ayiran_esigi_bulur():
+    from eval.hareket_formu import esik_kurali
+    x = [1, 2, 3, 10, 11, 12, np.nan]
+    y = [False, False, False, True, True, True, True]
+    t = esik_kurali(x, y)
+    assert 3 <= t < 10
+    assert esik_kurali([1, 2], [True, True]) == np.inf       # tek sinif: karar yok
+
+
+def test_nedensel_medyan_gelecegi_gormez():
+    from eval.hareket_formu import nedensel_medyan
+    x = np.array([0.0, 0.0, 9.0, 0.0, np.nan, 5.0])
+    y = nedensel_medyan(x, 3)
+    assert y[2] == 0.0                     # tek sicrama bastirilir
+    assert y[4] == 4.5                     # NaN atlanir: medyan(9, 0)
+    assert np.isnan(nedensel_medyan(np.array([np.nan]), 3)[0])
+    z = x.copy()
+    z[5] = 100.0                           # gelecek kare degisse de onceki cikti ayni
+    assert np.array_equal(nedensel_medyan(z, 3)[:5], y[:5], equal_nan=True)
+
+
+def test_sayac_esikleri_dinlenme_ile_tepe_arasinda():
+    from eval.hareket_formu import sayac_esikleri
+    kare = np.arange(300)
+    sinyal = np.zeros(300)
+    gercek = [(50, 110), (150, 210)]
+    for a, b in gercek:
+        sinyal[a:b + 1] = np.sin(np.linspace(0, np.pi, b - a + 1)) * 10
+    yuk, bel, aralik = sayac_esikleri([{"kare": kare, "gercek": gercek, "sinyal": sinyal}],
+                                      kare_hizi=30.0)
+    assert 0 < yuk < 10 and bel > 0
+    assert aralik == pytest.approx(0.5 * 2.0)
+
+
+def test_birlesik_kisi_disarida_ayrilan_veride_yuksek_auc():
+    pytest.importorskip("sklearn")
+    from eval.hareket_formu import birlesik_kisi_disarida
+    r = np.random.default_rng(0)
+    satir = [{"kisi": f"k{i % 4}", "yanlis": bool(i % 2), "a": (i % 2) * 2 + r.normal(0, 0.5),
+              "b": r.normal()} for i in range(80)]
+    sonuc = birlesik_kisi_disarida(satir, ["a", "b"])
+    assert sonuc["auc"] > 0.9 and sonuc["n"] == 80
+
+
+def _lunge_2b(diz_x):
+    """Sag ayak onde (+x yonune bakiyor), sol arkada; goruntu pikseli, y asagi."""
+    from pose3d.tam_vucut import TAM_VUCUT
+    P = np.full((5, len(TAM_VUCUT), 2), np.nan)
+    for t, bilek_x in (("sag", 200.0), ("sol", 0.0)):
+        P[:, TAM_VUCUT.indeks(f"{t}_ayak_bilegi")] = [bilek_x, 400]
+        P[:, TAM_VUCUT.indeks(f"{t}_bas_parmak")] = [bilek_x + 40, 410]
+        P[:, TAM_VUCUT.indeks(f"{t}_diz")] = [bilek_x + (diz_x if t == "sag" else 0), 300]
+    return P
+
+
+def test_ondeki_bacak_2b_bukulmeye_degil_konuma_bakar():
+    from eval.hareket_formu import ondeki_bacak_2b
+    assert ondeki_bacak_2b(_lunge_2b(0.0)) == "sag"
+    assert ondeki_bacak_2b(_lunge_2b(0.0)[:, :, ::-1] * 0) is None     # yon belirsiz
+
+
+def test_diz_parmak_onde_2b_gecince_pozitif():
+    from eval.hareket_formu import diz_parmak_onde_2b
+    kaval = 100.0
+    assert diz_parmak_onde_2b(_lunge_2b(60.0), "sag")[0] == pytest.approx((60 - 40) / np.hypot(60, kaval))
+    assert diz_parmak_onde_2b(_lunge_2b(0.0), "sag")[0] < 0

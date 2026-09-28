@@ -127,3 +127,22 @@ def test_gec_kilitte_ilk_tekrar_kacmaz():
     tekrar = [x for x in m if x["tur"] == "tekrar"]
     assert kilit["t"] >= 6.4
     assert tekrar and tekrar[0]["bas"] < 3.0          # kilitten once biten tekrar da sayildi
+
+
+def test_risk_kapsama_bant_buyudukce_kapsama_azalir():
+    from eval.hareket_formu import risk_kapsama
+    p = [0.9, 0.8, 0.55, 0.45, 0.2, 0.1]
+    y = [True, True, False, True, False, False]
+    r = {x["bant"]: x for x in risk_kapsama(p, y, bantlar=(0.0, 0.1))}
+    assert r[0.0]["kapsama"] == 1.0 and r[0.0]["dogruluk"] == round(4 / 6, 3)
+    assert r[0.1]["kapsama"] == round(4 / 6, 3) and r[0.1]["dogruluk"] == 1.0
+
+
+def test_kararsiz_bantta_emin_degilim():
+    a = an.Antrenor(_Tanima(), _modeller(p=0.55), kararsiz_bant=0.1)
+    m = _akis(a)
+    bel = [x for x in m if x["tur"] == "belirsiz"]
+    assert len(bel) >= 3 and not [x for x in m if x["tur"] == "tekrar"]
+    assert all(x["karar"] == "belirsiz" and "emin degilim" in x["metin"] for x in bel)
+    a2 = an.Antrenor(_Tanima(), _modeller(p=0.55))          # varsayilan: bant yok
+    assert all(x["karar"] == "yanlis" for x in _akis(a2) if x["tur"] == "tekrar")

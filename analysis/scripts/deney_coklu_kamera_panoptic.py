@@ -62,7 +62,8 @@ def tespit(a):
                 if not ok:
                     break
                 for pi, p in enumerate(m.kisiler(im)):
-                    kayit[f"{k}_{ci}_{pi}"] = np.c_[p.noktalar, p.gorunur, p.guven]
+                    ham = np.asarray(p.ek.get("ham_skor", p.guven), float)
+                    kayit[f"{k}_{ci}_{pi}"] = np.c_[p.noktalar, p.gorunur, p.guven, ham]
             print(ad, "bitti", flush=True)
     _onbellek(a).parent.mkdir(parents=True, exist_ok=True)
     np.savez_compressed(_onbellek(a), **kayit)
@@ -74,8 +75,9 @@ def _kameralar_kare(d, k, boyut=(1920, 1080)):
         pi = 0
         while f"{k}_{ci}_{pi}" in d:
             v = d[f"{k}_{ci}_{pi}"]
+            ek = {"ham_skor": v[:, 4]} if v.shape[1] > 4 else {}
             out[ci].append(Poz2B(TAM_VUCUT, v[:, :2], v[:, 3], v[:, 2] > 0.5, True, boyut,
-                                 model="rtmw"))
+                                 model="rtmw", ek=ek))
             pi += 1
     return out
 
@@ -92,7 +94,7 @@ def degerlendir(a):
     for k in kareler:
         kameralar = _kameralar_kare(d, k)
         kumeler = kisileri_esle(pk.kalib, kameralar, esik_px=a.esik_px)
-        ucgen = {"saglam": a.artik_px > 0, "esik_px": a.artik_px}
+        ucgen = {"saglam": a.artik_px > 0, "esik_px": a.artik_px, "skor_us": a.skor_us or None}
         isk = kisileri_ucgenle(pk.kalib, kameralar, kumeler, **ucgen)
         if a.birlestir:
             kumeler, isk = yakin_kumeleri_birlestir(pk.kalib, kameralar, kumeler, isk, **ucgen)
@@ -134,7 +136,7 @@ def degerlendir(a):
     sonuc = {
         "kareler": {"ilk": kareler[0], "n": len(kareler), "adim": a.adim},
         "kamera": KAMERALAR, "epipolar_esik_px": a.esik_px, "artik_esik_px": a.artik_px,
-        "birlestir": a.birlestir,
+        "birlestir": a.birlestir, "skor_us": a.skor_us,
         "etiketli_kisi_kare": gt_n, "tespit_orani": round(eslesen / max(gt_n, 1), 3),
         "fazla_kisi_kare_basina": round(fazla / len(kareler), 3),
         "govde_mpjpe_mm": {"medyan": round(float(np.median(h)), 1),
@@ -161,6 +163,8 @@ def main():
     p.add_argument("--artik-px", type=float, default=40.0,
                    help="saglam ucgenleme artik esigi; 0 saglam modu kapatir")
     p.add_argument("--birlestir", action=argparse.BooleanOptionalAction, default=True)
+    p.add_argument("--skor-us", type=float, default=2.0,
+                   help="kamera agirligi = ham RTMW skoru ** us (0039: 2); 0 esit agirlik")
     a = p.parse_args()
     if a.tespit:
         tespit(a)

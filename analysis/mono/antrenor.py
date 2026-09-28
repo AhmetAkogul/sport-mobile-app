@@ -10,7 +10,8 @@ mantiktir; canli modda (`mono.canli`) ve cevrimdisi uctan uca degerlendirmede
 2. **Tekrar say:** kilitli hareketin ana sinyali (`eval.hareket_formu.ana_sinyal`,
    nedensel 3 karelik medyan) `TekrarSayaci`'na verilir.
 3. **Tekrar karari:** biten tekrarin olculeri, tahmini bakis acisi grubunun
-   modeline verilir. O acida olculebilir model yoksa (0038) karar verilmez;
+   modeline verilir; olasilik 0,5'e `kararsiz_bant`'tan yakinsa karar verilmez
+   ("emin degilim"). O acida olculebilir model yoksa (0038) karar verilmez;
    "bu acidan olculemez" ve hangi aciya gecilecegi soylenir.
 4. **Ipucu:** yanlis tekrarda, modelin kararina en cok katki veren olcunun
    Turkce ipucu. Ayni ipucu `TEKRAR_S` saniye icinde yinelenmez.
@@ -60,6 +61,7 @@ IPUCLARI = {
     "pelvis_egimi": "Kalcani yukari kaldirma, pelvis duz kalsin",
     "diz_onde": "Dizlerin one kaciyor, kalcani geriye it",
     "diz_parmak_onde": "Dizin ayak ucunu geciyor, kalcani geriye it",
+    "diz_parmak_onde_2b": "Dizin ayak ucunu geciyor, kalcani geriye it",
     "diz_ice": "Dizlerin ice kapaniyor, disari it",
 }
 ACI_TARIFI = {"front": "karsidan", "half-profile": "capraz (45 derece)", "profile": "yandan"}
@@ -100,8 +102,9 @@ class Antrenor:
     ciktisi {hareket_no: {"ad", "olculer", "sayac", "gruplar": {aci: {"model"?, "auc"}}}}.
     """
 
-    def __init__(self, tanima, modeller: dict, yukari=MP_YUKARI):
+    def __init__(self, tanima, modeller: dict, yukari=MP_YUKARI, kararsiz_bant: float = 0.0):
         self.tanima, self.modeller, self.yukari = tanima, modeller, np.asarray(yukari, float)
+        self.kararsiz_bant = kararsiz_bant
         self.kisiler: dict[int, KisiDurumu] = {}
 
     def _kilit(self, d: KisiDurumu, t: float) -> list[dict]:
@@ -132,7 +135,7 @@ class Antrenor:
         yanlis = sum(r["karar"] == "yanlis" for r in d.tekrarlar)
         ad = self.modeller[d.hareket]["ad"]
         return {"tur": "set", "metin": f"Set bitti ({ad}): {n} tekrar, {dogru} iyi, "
-                                       f"{yanlis} duzeltilecek, {n - dogru - yanlis} olculemedi",
+                                       f"{yanlis} duzeltilecek, {n - dogru - yanlis} karar yok",
                 "hareket": ad, "tekrar": n, "dogru": dogru, "yanlis": yanlis}
 
     def _tekrar(self, d: KisiDurumu, bas: float, son: float, t: float) -> list[dict]:
@@ -143,7 +146,8 @@ class Antrenor:
             return []
         X = np.array(d.X3)[sec]
         hiz = max((sec.sum() - 1) / max(son - bas, 1e-6), 1.0)
-        olc = tekrar_olculeri(X, self.yukari, d.hareket, None, hiz, ayak=np.array(d.ayak)[sec])
+        olc = tekrar_olculeri(X, self.yukari, d.hareket, None, hiz, ayak=np.array(d.ayak)[sec],
+                              P2=np.array(d.P2)[sec])
         aci = float(np.nanmedian([bakis_acisi(P) for P in X]))
         grup = aci_grubu(aci)
         kayit = {"hareket": m["ad"], "tekrar": len(d.tekrarlar) + 1, "bas": bas, "son": son,
@@ -160,6 +164,11 @@ class Antrenor:
         x = np.array([olc[o] for o in m["olculer"]], float)
         p = float(g["model"].predict_proba(x[None])[0, 1])
         kayit["p_yanlis"] = p
+        if abs(p - 0.5) < self.kararsiz_bant:
+            kayit["karar"] = "belirsiz"
+            d.tekrarlar.append(kayit)
+            return [{"tur": "belirsiz", "metin": f"Tekrar {kayit['tekrar']}: emin degilim",
+                     **kayit}]
         kayit["karar"] = "yanlis" if p > 0.5 else "dogru"
         d.tekrarlar.append(kayit)
         durum = "DUZELT" if kayit["karar"] == "yanlis" else "iyi"

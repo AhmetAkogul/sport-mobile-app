@@ -200,6 +200,7 @@ def iskelet_ucgenle(
     min_gorus: int = 2,
     bozulma_giderildi: bool = False,
     *, saglam: bool = False, esik_px: float = 8.0, sigma_px: float | None = None,
+    skor_us: float | None = None,
 ) -> Iskelet3B:
     """Kamera basina 2B pozdan 3B iskelet.
 
@@ -207,6 +208,9 @@ def iskelet_ucgenle(
     o eklemi goren kameralardan ucgenlenir; bir kamera bir eklemi ortulme
     yuzunden gormuyorsa digerleri isi surdurur. Iki gorusun altina dusen eklem
     uydurulmaz, gorunmez isaretlenir.
+
+    `skor_us`: verilirse kamera agirligi = ham skor ** skor_us (`poz.ek["ham_skor"]`,
+    yoksa `poz.guven`); Panoptic'te 2 en iyisi (0039). None: esit agirlik.
 
     `ucgenle`'nin `ValueError`'u **yutulmaz**: buraya gelmeden once en az iki
     gorus sarti zaten denetlendi, dolayisiyla oradan gelen hata artik "bu eklem
@@ -228,6 +232,7 @@ def iskelet_ucgenle(
 
     for j in range(n):
         eklem_gozlem: dict[int, np.ndarray] = {}
+        eklem_agirlik: dict[int, float] = {}
         for kamera, (poz, harita) in yerlesim.items():
             k = harita[j]
             if k < 0 or not poz.gorunur[k]:
@@ -238,20 +243,25 @@ def iskelet_ucgenle(
                 if not (0 <= x < w and 0 <= y < h):
                     continue
             eklem_gozlem[kamera] = poz.noktalar[k]
+            if skor_us is not None:
+                skor = (poz.ek or {}).get("ham_skor", poz.guven)
+                eklem_agirlik[kamera] = max(float(skor[k]), 1e-6) ** skor_us
+        agirlik = eklem_agirlik if skor_us is not None else None
         goren[j] = len(eklem_gozlem)
         if len(eklem_gozlem) < max(2, min_gorus):
             continue
         if saglam:
             from pose3d.saglam import ucgenle_saglam
             secim = ucgenle_saglam(kalib, eklem_gozlem, esik_px=esik_px,
-                                   sigma_px=sigma_px, bozulma_giderildi=bozulma_giderildi)
+                                   sigma_px=sigma_px, bozulma_giderildi=bozulma_giderildi,
+                                   agirliklar=agirlik)
             kullanilan[tanim.eklemler[j]] = list(secim.kabul)
             nedenler[tanim.eklemler[j]] = secim.neden
             if secim.sonuc is None or len(secim.kabul) < max(2, min_gorus):
                 continue
             sonuc = secim.sonuc
         else:
-            sonuc: Ucgenleme = ucgenle(kalib, eklem_gozlem, bozulma_giderildi, sigma_px)
+            sonuc: Ucgenleme = ucgenle(kalib, eklem_gozlem, bozulma_giderildi, sigma_px, agirlik)
             kullanilan[tanim.eklemler[j]] = sorted(eklem_gozlem)
         if not sonuc.gecerli:
             continue

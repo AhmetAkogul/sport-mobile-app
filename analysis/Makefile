@@ -1,4 +1,4 @@
-.PHONY: kurulum kurulum-dev kontrol test lint kapsam reproduce kilit kilit-surum canli temiz
+.PHONY: kurulum kurulum-dev kontrol test lint kapsam reproduce kilit kilit-surum canli temiz panel antrenor canli-coklu
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 # MediaPipe ayri ortamda (0008); varsayilan yollar bitirme-capture calisma agaci.
@@ -49,12 +49,16 @@ kilit-surum:      ## Calisan ortamin tam surumlerini requirements-lock.txt'e yaz
 RTMW_MODEL ?= data/dis/rtmw_x_l_384/acik/end2end.onnx
 DEDEKTOR ?= ../bitirme-capture/data/models/rtmpose/detector.onnx
 HAREKET_MODELI ?= out/hareket_modeli.joblib
+OLAY_KAYDI ?= out/olaylar.jsonl
 FORM_MODELLERI ?= out/hareket_formu_modelleri.joblib
 
 antrenor:         ## Kameradan cok kisi + hareket + tekrar karari + ipucu (q: cikis)
 	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) --coklu-kisi --antrenor \
 		--dedektor $(DEDEKTOR) --rtmw $(RTMW_MODEL) --hareket-modeli $(HAREKET_MODELI) \
-		--form-modelleri $(FORM_MODELLERI) $(ARGS)
+		--form-modelleri $(FORM_MODELLERI) --bildirim-kaydi $(OLAY_KAYDI) $(ARGS)
+
+panel:            ## Antrenor paneli: $(OLAY_KAYDI) olaylarini http://localhost:8765'te canli gosterir
+	PYTHONPATH=. $(PYTHON) -m mono.olay_servisi --kayit $(OLAY_KAYDI) $(ARGS)
 
 canli-coklu:      ## Kameradan cok kisi, tam vucut, kimlikli (q: cikis)
 	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) --coklu-kisi \

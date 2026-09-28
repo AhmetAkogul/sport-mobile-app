@@ -1,4 +1,8 @@
-"""Deterministik gorus uzlasmasi; ham skor olasilik/agirlik kabul edilmez.
+"""Deterministik gorus uzlasmasi; ham skor olasilik kabul edilmez.
+
+Aday secimi ve aykiri ayrimi yalniz geometriyle yapilir. Istege bagli
+`agirliklar` yalniz kabul edilen gorusler icindeki son DLT'yi agirliklandirir
+(ayni modelin kameralar arasi goreli guveni; Panoptic'te medyan 21,1 -> ~19 mm, 0039).
 
 Iki goruste aykiri kamerayi ayirt edemeyiz. Uc ve fazla goruste en az uc
 uyumlu gorus gerekir. Piksel/ray esikleri gelistirme ayaridir, fiziksel kabul degil.
@@ -22,7 +26,7 @@ class SaglamSonuc:
 
 
 def ucgenle_saglam(kalib, gozlemler, *, esik_px=8.0, min_aci_derece=1.0,
-                   sigma_px=None, bozulma_giderildi=False):
+                   sigma_px=None, bozulma_giderildi=False, agirliklar=None):
     """Cift adaylar -> tum goruslerde uzlasma -> inlier DLT -> yeniden denetim."""
     if not np.isfinite(esik_px) or esik_px <= 0:
         raise ValueError("esik_px pozitif sonlu olmali")
@@ -72,7 +76,8 @@ def ucgenle_saglam(kalib, gozlemler, *, esik_px=8.0, min_aci_derece=1.0,
     if not adaylar:
         return SaglamSonuc(None, (), keys, "yetersiz_gorus_uzlasmasi")
     for _, _, selected in sorted(adaylar):
-        result = ucgenle(kalib, {k: pts[k] for k in selected}, True, sigma_px)
+        w = None if agirliklar is None else {k: agirliklar[k] for k in selected}
+        result = ucgenle(kalib, {k: pts[k] for k in selected}, True, sigma_px, w)
         if not result.gecerli:
             continue
         iyi, _ = inliers(result.nokta)

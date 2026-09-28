@@ -1,10 +1,28 @@
 # Çoklu Kamera 3B Hareket Analizi
 
 > Telefon uygulamaları egzersiz formunu, ölçemeyecekleri bir hassasiyetle değerlendiriyor.
-> Biz kalibre edilmiş çoklu kamera düzeneğiyle bu hatayı ölçüyor, sınırını belirliyor ve
-> telefon kestirimini düzeltmeyi öğretiyoruz.
+> Biz bu hatayı kalibre edilmiş çoklu kamera düzeneğiyle ölçüyor, sınırını belirliyor ve
+> telefon kestirimini düzeltmeyi öğretiyoruz. Ürün olarak: mobil uygulama kullanıcıya
+> yalnız ölçebildiği koşulda geri bildirim veriyor, salon kameraları problemli hareketi
+> antrenöre bildiriyor (`docs/kararlar/0073`).
 
 **Bitirme projesi · 2026–2027**
+
+## Ürün hedefi
+
+Proje iki bağlı ürün yüzeyinden oluşur:
+
+- **Mobil uygulama:** Kullanıcı ön veya arka telefon kamerasıyla egzersiz yaparken
+  kadraj, bakış açısı ve ölçülebilirlik rehberi alır; sistem yalnızca desteklenen
+  koşullarda form geri bildirimi verir, aksi durumda açıkça "ölçülemez" der.
+- **Spor salonu sistemi:** Sabit çoklu kamera düzeneği istasyon/anonim kişi
+  düzeyinde hareketi analiz eder ve problemli ölçüm veya form olayını antrenöre
+  bildirir. Üyelik/kişi tanıma ilk sürümün dışındadır; sonraki fazda ayrıca
+  etik, güvenlik ve açık rıza incelemesi gerektirir.
+
+Mobil ve salon arayüzleri aynı ölçüm, belirsizlik ve olay sözleşmesini kullanır.
+Salon bildirimi klinik teşhis değildir; "inceleme önerilir", "ölçülemez" veya
+"belirli form koşulu gözlendi" sınırlarında kalır.
 
 ## Hızlı başlangıç
 
@@ -15,12 +33,14 @@ make test        # testler (atlananlar nedeniyle listelenir)
 make reproduce   # 9 deneyin sayı ve şekilleri + sayı kilidi (~90 s)
 ```
 
-`make kontrol` "Her şey yerinde" demeden çalışmaya başlamayın.
+`make kontrol` "Her şey yerinde" demeden çalışmaya başlamayın. Tam test ve sayı
+kilidi yalnız belgelenen `.venv` ortamında geçerli kabul edilir; sistem Python'ı
+ile yapılan kısmi çalıştırmalar kanıt sayılmaz.
 
 **Birebir aynı ortam** için tam sürümler `requirements-lock.txt`'te:
-`pip install -r requirements-lock.txt`. 23 Eylül 2026'da boş bir sanal ortamda
-bu dosyayla kurulum, 510 test ve `make reproduce` (2758 sayının hepsi kilitle
-aynı) doğrulandı. Kilit `make kilit-surum` ile yenilenir.
+`pip install -r requirements-lock.txt`. Kurulumdan sonra `make test` ve
+`make reproduce` çalıştırılmalı; sonuçlar tarihli deney kaydıyla birlikte
+raporlanır. Kilit `make kilit-surum` ile yenilenir.
 
 Geliştirme: `make kurulum-dev` (ruff, pytest-cov), `make lint`, `make kapsam`.
 
@@ -70,13 +90,17 @@ gerçek salon videolarında "dizler içe"yi ayıramadı (`docs/deney/2026-09-28-
 
 ## Durum
 
-**Faz 0 — Karar ve kurulum.** Ayrıntı için `PROJE-PLANI.md`.
+**Durum — gerçek veride telefon hattı ve ürün kapsamı.** Araştırma çekirdeği
+REHAB24-6, EC3D ve Fitness-AQA üzerinde sınanıyor. Mobil kullanıcı akışı ile
+salon antrenör olay akışı ürün yüzeyi olarak tanımlandı; fiziksel çoklu kamera
+referansı ve Kapı 4 henüz tamamlanmış kabul edilmiyor. Ayrıntı için
+`PROJE-PLANI.md` ve `docs/kararlar/0073-mobil-ve-salon-urun-kapsami.md`.
 
-Depo iskeleti kurulu, ortam doğrulandı (Python 3.13 + OpenCV 5.0.0, `make kontrol` yeşil).
-İlk ölçüm modülü eklendi: `eval.metrics.reprojection_error`; 15 test geçti.
-`make reproduce` bilinen yapay nokta hatalarının JSON özetini üretir; gerçek
-kalibrasyon raporu değildir. [Geliştirme kaydı](docs/deney/2026-09-22-metric-baseline.md).
-Sıradaki iş: ChArUco üretimi ve tespiti, ardından sentetik kalibrasyon doğrulaması.
+Ortam: Python 3.13 + `opencv-contrib-python` 5.0.0.93, `.venv` içinde (`make kontrol`).
+Test sayısı ve güncel bulgular için tek kaynak `CLAUDE.md` "Şu anki durum" bölümüdür
+(sayı burada tekrarlanmaz ki eskimesin). Çalışan uçtan uca parçalar: `make canli`
+(tek kişi, tam vücut), `make canli-coklu` (çok kişi, kimlik, hareket etiketi),
+`make antrenor` (hareket tanıma, tekrar sayımı, tekrar kararı, ipucu; 0035–0040).
 
 ## Hazır teknoloji entegrasyonu
 
