@@ -346,6 +346,53 @@ def hareket_etiketleri(tanima, hat, eslesen: list) -> dict[int, str]:
     return out
 
 
+def kutu_dunya(mp_model, im, kutu, pay: float = 0.15):
+    """Kisinin kutusunu kirpip MediaPipe'le dunya iskeleti (13, 3) ve ayak (4, 3).
+
+    MediaPipe dunya noktalari kalca merkezli ve metriktir; kirpinti konumu
+    sonucu degistirmez. Cok kiside her kisiye tek kisi modeli boyle uygulanir.
+    """
+    h, w = im.shape[:2]
+    x0, y0, x1, y1 = kutu
+    dx, dy = (x1 - x0) * pay, (y1 - y0) * pay
+    x0, y0 = int(max(x0 - dx, 0)), int(max(y0 - dy, 0))
+    x1, y1 = int(min(x1 + dx, w)), int(min(y1 + dy, h))
+    if x1 - x0 < 16 or y1 - y0 < 16:
+        return None, None
+    ek = mp_model(np.ascontiguousarray(im[y0:y1, x0:x1])).ek
+    if "world_points_all_m" not in ek:
+        return None, None
+    return np.array(ek["world_points_all_m"], float), np.array(ek["ayak_dunya_m"], float)
+
+
+def _bildir(b: dict, kayit) -> None:
+    print(f"[{b['t']:7.1f} s] #{b['kimlik']} {b['metin']}", flush=True)
+    if kayit is not None:
+        import json
+        kayit.write(json.dumps({k: v for k, v in b.items() if k != "olculer"},
+                               ensure_ascii=False, default=float) + "\n")
+
+
+def antrenor_karesi(ant, mp_model, im, t: float, eslesen: list, son_mesaj: dict,
+                    kayit=None, gosterim_s: float = 4.0) -> dict[int, str]:
+    """Her kisi icin antrenore bir kare; kisi basina ekranda gosterilecek etiket."""
+    etiket = {}
+    for kimlik, poz in eslesen:
+        kutu = iskelet_kutusu(poz)
+        X3, ayak = kutu_dunya(mp_model, im, kutu) if kutu is not None else (None, None)
+        for b in ant.adim(kimlik, t, poz.noktalar, poz.gorunur, X3, ayak):
+            _bildir(b, kayit)
+            son_mesaj[kimlik] = (t, b["metin"])
+        d = ant.kisiler.get(kimlik)
+        ad = ant.modeller[d.hareket]["ad"] if d is not None and d.hareket else ""
+        n = len(d.tekrarlar) if d is not None and d.hareket else 0
+        metin = f"{ad} x{n}" if ad else ""
+        if kimlik in son_mesaj and t - son_mesaj[kimlik][0] <= gosterim_s:
+            metin = (metin + " | " if metin else "") + son_mesaj[kimlik][1]
+        etiket[kimlik] = metin
+    return etiket
+
+
 def coklu_main(a) -> None:
     """--coklu-kisi: karedeki herkes, kimlikli ve tam vucut (RTMW + ByteTrack; 0036)."""
     import cv2
@@ -364,6 +411,19 @@ def coklu_main(a) -> None:
 
         from eval.hareket import HareketTanima
         tanima = HareketTanima(joblib.load(a.hareket_modeli))
+    ant = mp_model = kayit = None
+    if a.antrenor:
+        import joblib
+
+        from eval.hareket import HareketTanima
+        from mono.antrenor import Antrenor
+        from mono.backend import kestirici_olustur
+        if not (a.hareket_modeli and a.form_modelleri):
+            raise SystemExit("--antrenor icin --hareket-modeli ve --form-modelleri gerekli")
+        ant = Antrenor(HareketTanima(joblib.load(a.hareket_modeli)), joblib.load(a.form_modelleri))
+        mp_model = kestirici_olustur("mediapipe", model=a.model)
+        kayit = open(a.bildirim_kaydi, "a", encoding="utf-8") if a.bildirim_kaydi else None
+    son_mesaj: dict[int, tuple[float, str]] = {}
     yazici, son, kare_no = None, [], 0
     t0 = time.monotonic()
     try:
@@ -375,7 +435,9 @@ def coklu_main(a) -> None:
                 t = kare_no / fps if a.video else time.monotonic() - t0
                 son = coklu_kisi_karesi(model, hat, im, t, kare_no, a.tespit_sikligi, son)
                 kare_no += 1
-                etiketler = hareket_etiketleri(tanima, hat, son) if tanima else None
+                etiketler = hareket_etiketleri(tanima, hat, son) if tanima and not ant else None
+                if ant is not None:
+                    etiketler = antrenor_karesi(ant, mp_model, im, t, son, son_mesaj, kayit)
                 cizilecek = son
                 if a.aynalama:
                     im = cv2.flip(im, 1)
@@ -399,6 +461,12 @@ def coklu_main(a) -> None:
             yazici.release()
         if a.pencere:
             cv2.destroyAllWindows()
+        if ant is not None:
+            for b in ant.bitir():
+                _bildir(b, kayit)
+            mp_model.close()
+            if kayit:
+                kayit.close()
     print(f"{kare_no} kare, gorulen kimlikler: {sorted(hat.kisiler)}")
 
 
@@ -424,6 +492,11 @@ def main(argv=None) -> None:
     p.add_argument("--rtmw", type=Path, help="RTMW tam vucut .onnx (--coklu-kisi)")
     p.add_argument("--hareket-modeli", type=Path,
                    help="hareket tanima modeli (.joblib, scripts/deney_hareket_tanima.py)")
+    p.add_argument("--antrenor", action="store_true",
+                   help="--coklu-kisi ile: tekrar sayimi, tekrar karari ve ipucu (0040)")
+    p.add_argument("--form-modelleri", type=Path,
+                   help="hareket formu modelleri (.joblib, scripts/deney_hareket_formu.py)")
+    p.add_argument("--bildirim-kaydi", type=Path, help="bildirimleri bu JSONL dosyasina ekle")
     p.add_argument("--tespit-sikligi", type=int, default=3,
                    help="dedektor kac karede bir calissin (--coklu-kisi)")
     a = p.parse_args(argv)

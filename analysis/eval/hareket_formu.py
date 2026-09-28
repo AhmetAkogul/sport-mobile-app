@@ -243,13 +243,15 @@ def tekrar_olculeri(X: np.ndarray, yukari, egzersiz: int, taraf: str | None,
             bacaklar = (taraf,)
         else:
             bacaklar = ("sag", "sol")
-        bukulme = np.nanmax([diz_bukulme(X, t) for t in bacaklar], axis=0)
-        parmak = (np.full(len(X), np.nan) if ayak is None else
-                  np.nanmax([diz_parmak_onde(X, ayak, u, t) for t in bacaklar], axis=0))
+        with warnings.catch_warnings():         # tum-NaN sutun (ayak yok) beklenen durum
+            warnings.simplefilter("ignore", RuntimeWarning)
+            bukulme = np.nanmax([diz_bukulme(X, t) for t in bacaklar], axis=0)
+            parmak = (np.full(len(X), np.nan) if ayak is None else
+                      np.nanmax([diz_parmak_onde(X, ayak, u, t) for t in bacaklar], axis=0))
+            onde = np.nanmax([diz_onde(X, u, t) for t in bacaklar], axis=0)
+            ice = np.nanmax([diz_ice(X, u, t) for t in bacaklar], axis=0)
         return {"sig": -s(bukulme), "derin": s(bukulme), "govde_egimi": s(govde_egimi(X, u)),
-                "diz_onde": s(np.nanmax([diz_onde(X, u, t) for t in bacaklar], axis=0)),
-                "diz_parmak_onde": s(parmak),
-                "diz_ice": s(np.nanmax([diz_ice(X, u, t) for t in bacaklar], axis=0))}
+                "diz_onde": s(onde), "diz_parmak_onde": s(parmak), "diz_ice": s(ice)}
     raise ValueError(f"desteklenmeyen egzersiz: {egzersiz}")
 
 
