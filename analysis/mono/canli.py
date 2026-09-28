@@ -303,6 +303,97 @@ def ciz(image: np.ndarray, noktalar_2b: np.ndarray | None, durum: dict) -> np.nd
     return out
 
 
+def iskelet_kutusu(poz, pay: float = 0.15):
+    """Onceki karenin iskeletinden sonraki kare icin kisi kutusu (dedektor atlanir)."""
+    from pose3d.tam_vucut import GRUPLAR
+    g = list(GRUPLAR["bas"] + GRUPLAR["govde"] + GRUPLAR["ayak"])
+    P = poz.noktalar[g][poz.gorunur[g]]
+    if len(P) < 4:
+        return None
+    lo, hi = P.min(axis=0), P.max(axis=0)
+    d = (hi - lo) * pay
+    w, h = poz.goruntu_boyutu
+    return [max(lo[0] - d[0], 0), max(lo[1] - d[1], 0), min(hi[0] + d[0], w - 1), min(hi[1] + d[1], h - 1)]
+
+
+def coklu_kisi_karesi(model, hat, im, t: float, kare_no: int, tespit_sikligi: int,
+                      son: list) -> list:
+    """Bir kare: RTMW (dedektor her `tespit_sikligi` karede bir) + takip.
+
+    Aradaki karelerde onceki karenin iskelet kutulari kullanilir; kutu listesi
+    bosalirsa dedektor hemen calisir (yeni giren kisi en gec N karede bulunur).
+    """
+    kutular = None
+    if tespit_sikligi > 1 and kare_no % tespit_sikligi and son:
+        kutular = [k for k in (iskelet_kutusu(p) for _, p in son) if k is not None] or None
+    return hat.adim(t, model.kisiler(im, kutular=kutular))
+
+
+def kisileri_ciz(out, eslesen: list, etiketler: dict | None = None):
+    import cv2
+
+    from mono.coklu_kisi import kisi_rengi
+    for kimlik, poz in eslesen:
+        renk = kisi_rengi(kimlik)
+        iskelet_ciz(out, poz, renk)
+        P = poz.noktalar[poz.gorunur]
+        if len(P):
+            x, y = int(P[:, 0].min()), int(max(P[:, 1].min() - 12, 20))
+            metin = f"#{kimlik}" + (f" {etiketler[kimlik]}" if etiketler and kimlik in etiketler else "")
+            cv2.putText(out, metin, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 0), 4, cv2.LINE_AA)
+            cv2.putText(out, metin, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.8, renk, 2, cv2.LINE_AA)
+    return out
+
+
+def coklu_main(a) -> None:
+    """--coklu-kisi: karedeki herkes, kimlikli ve tam vucut (RTMW + ByteTrack; 0036)."""
+    import cv2
+
+    from mono.coklu_kisi import CokKisiHatti, KisiTakip
+    from mono.rtmw_model import RTMWEstimator
+
+    cap = cv2.VideoCapture(str(a.video) if a.video else a.kamera)
+    if not cap.isOpened():
+        raise SystemExit(f"kaynak acilamadi: {a.video or a.kamera}")
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
+    hat = CokKisiHatti(KisiTakip(kare_hizi=fps if a.video else 15.0, kayip_s=2.0))
+    yazici, son, kare_no = None, [], 0
+    t0 = time.monotonic()
+    try:
+        with RTMWEstimator(a.dedektor, a.rtmw) as model:
+            while True:
+                ok, im = cap.read()
+                if not ok:
+                    break
+                t = kare_no / fps if a.video else time.monotonic() - t0
+                son = coklu_kisi_karesi(model, hat, im, t, kare_no, a.tespit_sikligi, son)
+                kare_no += 1
+                cizilecek = son
+                if a.aynalama:
+                    im = cv2.flip(im, 1)
+                    cizilecek = [(k, aynala(p)) for k, p in son]
+                goster = kisileri_ciz(im, cizilecek)
+                cv2.putText(goster, f"Kisi: {len(son)}  (arastirma denemesi)  q: cikis",
+                            (14, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
+                if a.kaydet is not None:
+                    if yazici is None:
+                        yazici = cv2.VideoWriter(str(a.kaydet), cv2.VideoWriter_fourcc(*"mp4v"),
+                                                 fps if a.video else 15.0,
+                                                 (goster.shape[1], goster.shape[0]))
+                    yazici.write(goster)
+                if a.pencere:
+                    cv2.imshow("Cok kisi - canli", goster)
+                    if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
+                        break
+    finally:
+        cap.release()
+        if yazici is not None:
+            yazici.release()
+        if a.pencere:
+            cv2.destroyAllWindows()
+    print(f"{kare_no} kare, gorulen kimlikler: {sorted(hat.kisiler)}")
+
+
 def main(argv=None) -> None:
     import cv2
 
@@ -319,7 +410,17 @@ def main(argv=None) -> None:
     p.add_argument("--kaydet", type=Path, help="islenmis goruntuyu bu .mp4'e de yaz")
     p.add_argument("--el-modeli", type=Path,
                    help="MediaPipe hand_landmarker .task; verilirse parmak eklemleri de cizilir")
+    p.add_argument("--coklu-kisi", action="store_true",
+                   help="karedeki herkes (RTMW + takip); --dedektor ve --rtmw gerekli")
+    p.add_argument("--dedektor", type=Path, help="YOLOX kisi dedektoru .onnx (--coklu-kisi)")
+    p.add_argument("--rtmw", type=Path, help="RTMW tam vucut .onnx (--coklu-kisi)")
+    p.add_argument("--tespit-sikligi", type=int, default=3,
+                   help="dedektor kac karede bir calissin (--coklu-kisi)")
     a = p.parse_args(argv)
+    if a.coklu_kisi:
+        if not (a.dedektor and a.rtmw):
+            p.error("--coklu-kisi icin --dedektor ve --rtmw gerekli")
+        return coklu_main(a)
 
     cap = cv2.VideoCapture(str(a.video) if a.video else a.kamera)
     if not cap.isOpened() and a.video:

@@ -83,14 +83,19 @@ def dunyadan_kamera0(noktalar_m: np.ndarray, pk: PanopticKalibrasyon) -> np.ndar
     return (pk.R0 @ P.T + pk.t0_m).T
 
 
-def iskeletler_oku(tar_yolu: str | Path, kareler: list[int]) -> dict[int, list[np.ndarray]]:
-    """Kare -> kisi basina (19, 4) dizi [x, y, z (metre), guven]. Kayit yoksa bos liste."""
-    istenen = {f"hdPose3d_stage1_coco19/body3DScene_{k:08d}.json": k for k in kareler}
-    sonuc: dict[int, list[np.ndarray]] = {k: [] for k in kareler}
+def kimlikli_iskeletler_oku(tar_yolu: str | Path,
+                            kareler: list[int]) -> dict[int, list[tuple[int, np.ndarray]]]:
+    """Kare -> [(Panoptic kisi kimligi, (19, 4) [x, y, z (metre), guven])].
+
+    Dizilerin bir kismi dosyalari `hdPose3d_stage1_coco19/hd/` altinda tutar;
+    eslesme dosya adiyla yapilir.
+    """
+    istenen = {f"body3DScene_{k:08d}.json": k for k in kareler}
+    sonuc: dict[int, list[tuple[int, np.ndarray]]] = {k: [] for k in kareler}
     with tarfile.open(tar_yolu) as tar:
         for uye in tar:
-            kare = istenen.get(uye.name)
-            if kare is None:
+            kare = istenen.get(uye.name.rsplit("/", 1)[-1])
+            if kare is None or not uye.name.startswith("hdPose3d_stage1_coco19/"):
                 continue
             dosya = tar.extractfile(uye)
             if dosya is None:
@@ -99,8 +104,43 @@ def iskeletler_oku(tar_yolu: str | Path, kareler: list[int]) -> dict[int, list[n
             for govde in veri.get("bodies", []):
                 j = np.asarray(govde["joints19"], float).reshape(19, 4)
                 j[:, :3] *= CM
-                sonuc[kare].append(j)
+                sonuc[kare].append((int(govde.get("id", -1)), j))
     return sonuc
+
+
+def iskeletler_oku(tar_yolu: str | Path, kareler: list[int]) -> dict[int, list[np.ndarray]]:
+    """Kare -> kisi basina (19, 4) dizi [x, y, z (metre), guven]. Kayit yoksa bos liste."""
+    return {k: [j for _, j in v] for k, v in kimlikli_iskeletler_oku(tar_yolu, kareler).items()}
+
+
+def kamera_oku(yol: str | Path, ad: str) -> dict:
+    """Tek kameranin ham Panoptic kaydi (K, distCoef, R, t [cm], resolution)."""
+    for c in json.loads(Path(yol).read_text())["cameras"]:
+        if c["name"] == ad:
+            return c
+    raise ValueError(f"kalibrasyonda olmayan kamera: {ad}")
+
+
+def izdusur(noktalar_m: np.ndarray, kamera: dict) -> np.ndarray:
+    """Dunya noktalarini (metre) kameranin ozgun piksellerine izdusurur (bozulma dahil).
+
+    Kameranin arkasinda kalan nokta NaN olur.
+    """
+    import cv2
+    P = np.asarray(noktalar_m, float).reshape(-1, 3) / CM
+    R = np.asarray(kamera["R"], float)
+    t = np.asarray(kamera["t"], float).reshape(3, 1)
+    z = (R @ P.T + t)[2]
+    px, _ = cv2.projectPoints(P.reshape(-1, 1, 3), cv2.Rodrigues(R)[0], t,
+                              np.asarray(kamera["K"], float),
+                              np.asarray(kamera["distCoef"], float).ravel())
+    px = px.reshape(-1, 2)
+    px[~(z > 0)] = np.nan
+    return px
+
+
+# COCO19 -> TAM_VUCUT govde (0..16): burun, gozler, kulaklar, omuz..ayak bilegi.
+COCO19_TAM_VUCUT = (1, 15, 17, 16, 18, 3, 9, 4, 10, 5, 11, 6, 12, 7, 13, 8, 14)
 
 
 def referansa_tasi(joints19: np.ndarray, guven_esigi: float = 0.1) -> tuple[np.ndarray, np.ndarray]:

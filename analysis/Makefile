@@ -46,6 +46,13 @@ kilit:            ## Rapordaki sayilari kilitle karsilastir (reproduce'dan sonra
 kilit-surum:      ## Calisan ortamin tam surumlerini requirements-lock.txt'e yaz
 	$(PYTHON) -m pip freeze --exclude-editable | grep -v -i -E '^(ruff|pytest-cov|coverage)==' > requirements-lock.txt
 
+RTMW_MODEL ?= data/dis/rtmw_x_l_384/acik/end2end.onnx
+DEDEKTOR ?= ../bitirme-capture/data/models/rtmpose/detector.onnx
+
+canli-coklu:      ## Kameradan cok kisi, tam vucut, kimlikli (q: cikis)
+	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) --coklu-kisi \
+		--dedektor $(DEDEKTOR) --rtmw $(RTMW_MODEL) $(ARGS)
+
 canli:            ## Kameradan canli squat valgus denemesi (q: cikis)
 	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) \
 		$(if $(wildcard $(MP_EL)),--el-modeli $(MP_EL)) $(ARGS)
