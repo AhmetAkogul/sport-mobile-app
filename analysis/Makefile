@@ -48,10 +48,12 @@ kilit-surum:      ## Calisan ortamin tam surumlerini requirements-lock.txt'e yaz
 
 RTMW_MODEL ?= data/dis/rtmw_x_l_384/acik/end2end.onnx
 DEDEKTOR ?= ../bitirme-capture/data/models/rtmpose/detector.onnx
+HAREKET_MODELI ?= out/hareket_modeli.joblib
 
 canli-coklu:      ## Kameradan cok kisi, tam vucut, kimlikli (q: cikis)
 	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) --coklu-kisi \
-		--dedektor $(DEDEKTOR) --rtmw $(RTMW_MODEL) $(ARGS)
+		--dedektor $(DEDEKTOR) --rtmw $(RTMW_MODEL) \
+		$(if $(wildcard $(HAREKET_MODELI)),--hareket-modeli $(HAREKET_MODELI)) $(ARGS)
 
 canli:            ## Kameradan canli squat valgus denemesi (q: cikis)
 	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) \

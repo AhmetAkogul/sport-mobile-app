@@ -345,6 +345,19 @@ def kisileri_ciz(out, eslesen: list, etiketler: dict | None = None):
     return out
 
 
+def hareket_etiketleri(tanima, hat, eslesen: list) -> dict[int, str]:
+    """Kimlik -> "squat %87" gibi etiket (2 s gecmis dolmadiysa etiket yok)."""
+    out = {}
+    for kimlik, _ in eslesen:
+        g = hat.kisiler.get(kimlik)
+        if g is None:
+            continue
+        r = tanima.tahmin(kimlik, *g.dizi())
+        if r is not None:
+            out[kimlik] = f"{r[0]} %{100 * r[1]:.0f}"
+    return out
+
+
 def coklu_main(a) -> None:
     """--coklu-kisi: karedeki herkes, kimlikli ve tam vucut (RTMW + ByteTrack; 0036)."""
     import cv2
@@ -357,6 +370,12 @@ def coklu_main(a) -> None:
         raise SystemExit(f"kaynak acilamadi: {a.video or a.kamera}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     hat = CokKisiHatti(KisiTakip(kare_hizi=fps if a.video else 15.0, kayip_s=2.0))
+    tanima = None
+    if a.hareket_modeli:
+        import joblib
+
+        from eval.hareket import HareketTanima
+        tanima = HareketTanima(joblib.load(a.hareket_modeli))
     yazici, son, kare_no = None, [], 0
     t0 = time.monotonic()
     try:
@@ -368,11 +387,12 @@ def coklu_main(a) -> None:
                 t = kare_no / fps if a.video else time.monotonic() - t0
                 son = coklu_kisi_karesi(model, hat, im, t, kare_no, a.tespit_sikligi, son)
                 kare_no += 1
+                etiketler = hareket_etiketleri(tanima, hat, son) if tanima else None
                 cizilecek = son
                 if a.aynalama:
                     im = cv2.flip(im, 1)
                     cizilecek = [(k, aynala(p)) for k, p in son]
-                goster = kisileri_ciz(im, cizilecek)
+                goster = kisileri_ciz(im, cizilecek, etiketler)
                 cv2.putText(goster, f"Kisi: {len(son)}  (arastirma denemesi)  q: cikis",
                             (14, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2, cv2.LINE_AA)
                 if a.kaydet is not None:
@@ -414,6 +434,8 @@ def main(argv=None) -> None:
                    help="karedeki herkes (RTMW + takip); --dedektor ve --rtmw gerekli")
     p.add_argument("--dedektor", type=Path, help="YOLOX kisi dedektoru .onnx (--coklu-kisi)")
     p.add_argument("--rtmw", type=Path, help="RTMW tam vucut .onnx (--coklu-kisi)")
+    p.add_argument("--hareket-modeli", type=Path,
+                   help="hareket tanima modeli (.joblib, scripts/deney_hareket_tanima.py)")
     p.add_argument("--tespit-sikligi", type=int, default=3,
                    help="dedektor kac karede bir calissin (--coklu-kisi)")
     a = p.parse_args(argv)

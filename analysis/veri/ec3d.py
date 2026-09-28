@@ -34,6 +34,14 @@ BODY25 = {
 }
 _TURETILMIS = {"boyun": (2, 5)}
 
+# BODY_25 indeksi -> TAM_VUCUT (pose3d.tam_vucut) indeksi; -1: karsiligi yok
+# (1 boyun, 8 kalca ortasi turetilmis noktalar). BODY_25: 0 burun, 1 boyun,
+# 2-4 sag omuz/dirsek/bilek, 5-7 sol, 8 kalca ortasi, 9-11 sag kalca/diz/ayak
+# bilegi, 12-14 sol, 15/16 sag/sol goz, 17/18 sag/sol kulak, 19-21 sol bas
+# parmak/serce parmak/topuk, 22-24 sag.
+BODY25_TAM_VUCUT = (0, -1, 6, 8, 10, 5, 7, 9, -1, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3,
+                    17, 18, 19, 20, 21, 22)
+
 
 def kareyi_cevir(poz_3x25: np.ndarray) -> Iskelet3B:
     """(3, 25) BODY_25 -> REFERANS_ISKELET sirasinda Iskelet3B (normalize birim)."""
