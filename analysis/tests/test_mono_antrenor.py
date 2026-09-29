@@ -146,3 +146,18 @@ def test_kararsiz_bantta_emin_degilim():
     assert all(x["karar"] == "belirsiz" and "emin degilim" in x["metin"] for x in bel)
     a2 = an.Antrenor(_Tanima(), _modeller(p=0.55))          # varsayilan: bant yok
     assert all(x["karar"] == "yanlis" for x in _akis(a2) if x["tur"] == "tekrar")
+
+
+def test_30_kare_titresimi_cift_tekrar_saymaz():
+    """29 Eylul: yumusatma 3 kare iken 30 kare/s'de titresim tekrari ikiye boluyordu."""
+    r = np.random.default_rng(0)
+    a = an.Antrenor(_Tanima(), _modeller(p=0.1))
+    hiz, sure = 30.0, 12.0
+    m = []
+    for i in range(int(sure * hiz)):
+        t = i / hiz
+        buk = 0 if t < 2 else 45 * (1 - np.cos(2 * np.pi * (t - 2) / 2.5))
+        buk += 14 * (-1) ** i + r.normal(0, 3)          # kare kare titresim
+        m += a.adim(1, t, np.zeros((65, 2)), np.ones(65, bool), _iskelet(max(buk, 0)))
+    tekrar = [x for x in m if x["tur"] == "tekrar"]
+    assert 3 <= len(tekrar) <= 4                         # 10 s / 2,5 s periyot

@@ -134,3 +134,13 @@ def test_yandan_tekrar_ozetinde_sagital_var_onden_yok():
     assert s["sagital"]["derinlik"] == pytest.approx(100.0, abs=1.0)
     s = _squat(canli.CanliDegerlendirici())["son_tekrar"]
     assert s["sagital"] is None
+
+
+def test_kaynak_ac_akis_ve_video_ayrimi(tmp_path):
+    import argparse
+
+    from mono.canli import kaynak_ac
+    a = argparse.Namespace(video=None, akis="rtsp://k:p@127.0.0.1:1/yok", kamera=0)
+    cap, dosya, ad = kaynak_ac(a)
+    assert dosya is False and ad == "127.0.0.1:1/yok"      # parola adda yok
+    cap.release()

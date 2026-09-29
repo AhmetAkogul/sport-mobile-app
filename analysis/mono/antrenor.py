@@ -36,6 +36,12 @@ KILIT_S, KILIT_P, BIRAK_S, TEKRAR_S = 1.5, 0.6, 2.0, 10.0
 # 2 s pencere + 1,5 s kilit bekledigi icin ilk tekrar kilitten once biter
 # (REHAB24 squat videosunda 5 tekrarin ilki boyle kaciyordu).
 GERI_S = 4.0
+# Sayac sinyalinin nedensel medyani saniye cinsinden: modeller 10 kare/s veride
+# 3 karelik (0,3 s) medyanla ayarlandi; canli 30 kare/s'de "3 kare" 0,1 s'ye
+# iniyor ve titresim cift tekrar uretiyordu (29 Eylul, mobil kip demosu).
+# Pencere (t - YUMUSATMA_S, t]: 10 kare/s'de tam 3 ornek (eski davranis birebir),
+# 30 kare/s'de 8 ornek. 0,3 yerine 0,25: kayan noktada 4. ornegi almasin.
+YUMUSATMA_S = 0.25
 _AD_NO = {v: k for k, v in HAREKETLER.items()}
 
 # Olcu -> ipucu (ekranda cv2 ile cizildigi icin ASCII).
@@ -87,8 +93,8 @@ class KisiDurumu:
     G2: deque = field(default_factory=lambda: deque(maxlen=600))
     X3: deque = field(default_factory=lambda: deque(maxlen=600))
     ayak: deque = field(default_factory=lambda: deque(maxlen=600))
-    sinyal: deque = field(default_factory=lambda: deque(maxlen=3))
-    etiketler: deque = field(default_factory=lambda: deque(maxlen=200))   # (t, ad, p)
+    sinyal: deque = field(default_factory=lambda: deque(maxlen=128))   # (t, deger)
+    etiketler: deque = field(default_factory=lambda: deque(maxlen=600))   # (t, ad, p); 30 kare/s'de 20 s
     hareket: int | None = None
     sayac: TekrarSayaci | None = None
     tekrarlar: list = field(default_factory=list)
@@ -199,8 +205,8 @@ class Antrenor:
             kareler = ([(tt, X) for tt, X in zip(d.zaman, d.X3) if tt >= t - GERI_S] if yeni
                        else [(t, d.X3[-1])])
             for tt, X in kareler:
-                d.sinyal.append(ana_sinyal(X[None], self.yukari, d.hareket)[0])
-                v = np.array(d.sinyal)
+                d.sinyal.append((tt, ana_sinyal(X[None], self.yukari, d.hareket)[0]))
+                v = np.array([x for ts, x in d.sinyal if ts > tt - YUMUSATMA_S])
                 v = v[np.isfinite(v)]
                 biten = d.sayac.ekle(tt, float(np.median(v)) if len(v) else np.nan)
                 if biten:

@@ -463,27 +463,69 @@ def kisi_disarida_dogruluk(satirlar, olcu):
             "duyarlilik": round(float(np.mean(tahmin[gercek])), 3) if gercek.any() else None,
             "ozgulluk": round(float(np.mean(~tahmin[~gercek])), 3) if (~gercek).any() else None}
 
-def birlesik_model():
+# Aday birlesik modeller: (ceza, C). Secim yalniz egitim kisileri icinde
+# (`secilen_model`, ic kisi-disarida AUC); 0038 duzenlilestirme taramasi.
+ADAY_MODELLER = {"l2_c0.5": ("l2", 0.5), "l1_c0.3": ("l1", 0.3), "l1_c0.1": ("l1", 0.1)}
+
+
+def birlesik_model(ad: str = "l2_c0.5"):
     """Butun olculer: eksik -> medyan, olcekleme, dengeli lojistik regresyon."""
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import make_pipeline
     from sklearn.preprocessing import StandardScaler
+    ceza, C = ADAY_MODELLER[ad]
     return make_pipeline(SimpleImputer(strategy="median", keep_empty_features=True),
-                         StandardScaler(), LogisticRegression(C=0.5, class_weight="balanced",
-                                                              max_iter=1000))
+                         StandardScaler(),
+                         LogisticRegression(C=C, class_weight="balanced", max_iter=2000,
+                                            **({"l1_ratio": 1.0, "solver": "liblinear"}
+                                               if ceza == "l1" else {})))
 
-def birlesik_kisi_disarida(satirlar, olculer):
-    """Butun olculeri birlestiren model, kisi-disarida: AUC ve 0,5 esikte dogruluk."""
-    X = np.array([[s[o] for o in olculer] for s in satirlar], float)
-    y = np.array([s["yanlis"] for s in satirlar], bool)
-    kisi = np.array([s["kisi"] for s in satirlar])
+
+def _kisi_disarida_olasilik(X, y, kisi, model_yap) -> np.ndarray:
     p = np.full(len(y), np.nan)
     for k in sorted(set(kisi)):
         te = kisi == k
         if y[~te].all() or not y[~te].any():
             continue
-        p[te] = birlesik_model().fit(X[~te], y[~te]).predict_proba(X[te])[:, 1]
+        p[te] = model_yap().fit(X[~te], y[~te]).predict_proba(X[te])[:, 1]
+    return p
+
+
+def secilen_model(X, y, kisi):
+    """Adaylar arasindan egitim verisinde ic kisi-disarida AUC'si en yuksek olan,
+    tum egitim verisine oturtulmus. Tek aday ya da tek kisi varsa varsayilan."""
+    en_iyi, en_iyi_auc = "l2_c0.5", -1.0
+    if len(set(kisi)) >= 3:
+        for ad in ADAY_MODELLER:
+            p = _kisi_disarida_olasilik(X, y, kisi, lambda ad=ad: birlesik_model(ad))
+            ok = np.isfinite(p)
+            a = auc(p[ok & y], p[ok & ~y]) if ok.any() else None
+            if a is not None and a > en_iyi_auc + 1e-9:
+                en_iyi, en_iyi_auc = ad, a
+    m = birlesik_model(en_iyi).fit(X, y)
+    m.aday_ = en_iyi
+    return m
+
+
+def birlesik_kisi_disarida(satirlar, olculer, secim: bool = False):
+    """Butun olculeri birlestiren model, kisi-disarida: AUC ve 0,5 esikte dogruluk.
+
+    `secim`: her dis katlamada model `secilen_model` ile yalniz egitim kisilerinde
+    secilir (ic ice kisi-disarida); test kisisi secime girmez.
+    """
+    X = np.array([[s[o] for o in olculer] for s in satirlar], float)
+    y = np.array([s["yanlis"] for s in satirlar], bool)
+    kisi = np.array([s["kisi"] for s in satirlar])
+    if secim:
+        p = np.full(len(y), np.nan)
+        for k in sorted(set(kisi)):
+            te = kisi == k
+            if y[~te].all() or not y[~te].any():
+                continue
+            p[te] = secilen_model(X[~te], y[~te], kisi[~te]).predict_proba(X[te])[:, 1]
+    else:
+        p = _kisi_disarida_olasilik(X, y, kisi, birlesik_model)
     ok = np.isfinite(p)
     if not ok.any():
         return None
@@ -493,6 +535,7 @@ def birlesik_kisi_disarida(satirlar, olculer):
             "dogruluk": round(float(np.mean(t == y[ok])), 3), "n": int(ok.sum()),
             "duyarlilik": round(float(np.mean(t[y[ok]])), 3),
             "ozgulluk": round(float(np.mean(~t[~y[ok]])), 3)}
+
 
 def nedensel_medyan(x, n: int = 3):
     """Nedensel medyan (son n kare): canlida da ayni sekilde uygulanir."""

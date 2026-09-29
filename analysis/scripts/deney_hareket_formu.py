@@ -25,7 +25,8 @@ import numpy as np  # noqa: E402
 from eval.hareket_formu import (OLCULEBILIR_AUC, TekrarSayaci, aci_grubu,  # noqa: E402, F401
                                 ana_sinyal, auc, bakis_acisi, birlesik_kisi_disarida,
                                 birlesik_model, esik_kurali, kisi_disarida_dogruluk,
-                                nedensel_medyan, sayac_esikleri, tekrar_olculeri)
+                                nedensel_medyan, sayac_esikleri, secilen_model,
+                                tekrar_olculeri)
 from veri.rehab24 import kareyi_cevir, tekrar_kareleri, tekrarlar_oku  # noqa: E402
 
 VERI = Path("data/dis/rehab24_6")
@@ -176,7 +177,7 @@ def main():
             g = [s for s in tel if s["yon"] == grup]
             tel_ozet[grup] = {"n": len(g), "olculer": ozet(g, olculer),
                               "kural": kisi_disarida_dogruluk(g, en_iyi),
-                              "birlesik": birlesik_kisi_disarida(g, olculer)}
+                              "birlesik": birlesik_kisi_disarida(g, olculer, secim=True)}
         sayim = sayim_verisi(ex)
         sonuc_sayim = sayim_kisi_disarida(sayim)
         sonuc_sayim["ham_sinyal"] = sayim_kisi_disarida(sayim, n_yumusat=1)
@@ -186,12 +187,13 @@ def main():
         gruplar = {}
         for grup in ("front", "half-profile", "profile"):
             g = [s_ for s_ in tel if s_["yon"] == grup]
-            deg = birlesik_kisi_disarida(g, olculer) if len(g) >= 20 else None
+            deg = birlesik_kisi_disarida(g, olculer, secim=True) if len(g) >= 20 else None
             kayit = {"auc": None if deg is None else deg["auc"], "n": len(g)}
             if deg and deg["auc"] is not None and deg["auc"] >= OLCULEBILIR_AUC:
                 X = np.array([[s_[o] for o in olculer] for s_ in g], float)
                 y = np.array([s_["yanlis"] for s_ in g], bool)
-                kayit["model"] = birlesik_model().fit(X, y)
+                kayit["model"] = secilen_model(X, y, np.array([s_["kisi"] for s_ in g]))
+                kayit["aday"] = kayit["model"].aday_
             gruplar[grup] = kayit
         modeller[ex] = {"ad": ad, "olculer": olculer, "sayac": _esikler(sayim),
                         "gruplar": gruplar}

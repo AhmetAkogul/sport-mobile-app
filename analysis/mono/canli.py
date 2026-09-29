@@ -391,6 +391,20 @@ def model_surumu(*yollar) -> str:
                     for y in yollar if y)
 
 
+def kaynak_ac(a):
+    """(cv2.VideoCapture, dosya_mi, ad): --video dosya, --akis IP kamera (RTSP/HTTP), yoksa --kamera.
+
+    Salon kameralari genelde RTSP (H.264/H.265) yayinlar; akis canli kaynak gibi
+    ele alinir (zaman gercek saat, kare hizi dosyadan okunmaz).
+    """
+    import cv2
+    if a.video:
+        return cv2.VideoCapture(str(a.video)), True, a.video.name
+    if a.akis:
+        return cv2.VideoCapture(a.akis, cv2.CAP_FFMPEG), False, a.akis.split("@")[-1]
+    return cv2.VideoCapture(a.kamera), False, str(a.kamera)
+
+
 def _bildir(b: dict, kayit) -> None:
     print(f"[{b['t']:7.1f} s] #{b['kimlik']} {b['metin']}", flush=True)
     if kayit is not None:
@@ -398,12 +412,19 @@ def _bildir(b: dict, kayit) -> None:
 
 
 def antrenor_karesi(ant, mp_model, im, t: float, eslesen: list, son_mesaj: dict,
-                    kayit=None, gosterim_s: float = 4.0) -> dict[int, str]:
-    """Her kisi icin antrenore bir kare; kisi basina ekranda gosterilecek etiket."""
+                    kayit=None, gosterim_s: float = 4.0,
+                    dunya: dict | None = None) -> dict[int, str]:
+    """Her kisi icin antrenore bir kare; kisi basina ekranda gosterilecek etiket.
+
+    `dunya`: {kimlik: (X3, ayak)} hazirsa (mobil kip) kirpip yeniden hesaplanmaz.
+    """
     etiket = {}
     for kimlik, poz in eslesen:
-        kutu = iskelet_kutusu(poz)
-        X3, ayak = kutu_dunya(mp_model, im, kutu) if kutu is not None else (None, None)
+        if dunya is not None and kimlik in dunya:
+            X3, ayak = dunya[kimlik]
+        else:
+            kutu = iskelet_kutusu(poz)
+            X3, ayak = kutu_dunya(mp_model, im, kutu) if kutu is not None else (None, None)
         for b in ant.adim(kimlik, t, poz.noktalar, poz.gorunur, X3, ayak):
             _bildir(b, kayit)
             son_mesaj[kimlik] = (t, b["metin"])
@@ -417,18 +438,33 @@ def antrenor_karesi(ant, mp_model, im, t: float, eslesen: list, son_mesaj: dict,
     return etiket
 
 
+def mobil_karesi(mp_model, im) -> tuple[list, dict]:
+    """Mobil kip (0041): tek kisi, yalniz MediaPipe. (eslesen, dunya) -- 2B tam vucut ve
+    ayni kareden dunya iskeleti; RTMW ve kisi takibi yok (telefonda tek kullanici)."""
+    ref, tam = mp_model.tam_vucut(im)
+    if not tam.tespit or "world_points_all_m" not in ref.ek:
+        return [], {}
+    return [(1, tam)], {1: (np.array(ref.ek["world_points_all_m"], float),
+                            np.array(ref.ek["ayak_dunya_m"], float))}
+
+
 def coklu_main(a) -> None:
-    """--coklu-kisi: karedeki herkes, kimlikli ve tam vucut (RTMW + ByteTrack; 0036)."""
+    """--coklu-kisi: karedeki herkes, kimlikli ve tam vucut (RTMW + ByteTrack; 0036).
+
+    --mobil: tek kisi, yalniz MediaPipe (telefon motoru, 0041); --antrenor ile.
+    """
+    import contextlib
+
     import cv2
 
     from mono.coklu_kisi import CokKisiHatti, KisiTakip
     from mono.rtmw_model import RTMWEstimator
 
-    cap = cv2.VideoCapture(str(a.video) if a.video else a.kamera)
+    cap, dosya, kaynak_adi = kaynak_ac(a)
     if not cap.isOpened():
-        raise SystemExit(f"kaynak acilamadi: {a.video or a.kamera}")
+        raise SystemExit(f"kaynak acilamadi: {kaynak_adi}")
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
-    hat = CokKisiHatti(KisiTakip(kare_hizi=fps if a.video else 15.0, kayip_s=2.0))
+    hat = CokKisiHatti(KisiTakip(kare_hizi=fps if dosya else 15.0, kayip_s=2.0))
     tanima = None
     if a.hareket_modeli:
         import joblib
@@ -448,24 +484,30 @@ def coklu_main(a) -> None:
                        kararsiz_bant=a.kararsiz_bant)
         mp_model = kestirici_olustur("mediapipe", model=a.model)
         kayit = (OlayYazici(a.bildirim_kaydi, yuzey=a.yuzey, istasyon=a.istasyon,
-                            kamera=str(a.video.name if a.video else a.kamera),
+                            kamera=kaynak_adi,
                             model_surumu=model_surumu(a.hareket_modeli, a.form_modelleri))
                  if a.bildirim_kaydi else None)
     son_mesaj: dict[int, tuple[float, str]] = {}
     yazici, son, kare_no = None, [], 0
     t0 = time.monotonic()
     try:
-        with RTMWEstimator(a.dedektor, a.rtmw) as model:
+        with (contextlib.nullcontext() if a.mobil
+              else RTMWEstimator(a.dedektor, a.rtmw, cihaz=a.cihaz)) as model:
             while True:
                 ok, im = cap.read()
                 if not ok:
                     break
-                t = kare_no / fps if a.video else time.monotonic() - t0
-                son = coklu_kisi_karesi(model, hat, im, t, kare_no, a.tespit_sikligi, son)
+                t = kare_no / fps if dosya else time.monotonic() - t0
+                dunya = None
+                if a.mobil:
+                    son, dunya = mobil_karesi(mp_model, im)
+                else:
+                    son = coklu_kisi_karesi(model, hat, im, t, kare_no, a.tespit_sikligi, son)
                 kare_no += 1
                 etiketler = hareket_etiketleri(tanima, hat, son) if tanima and not ant else None
                 if ant is not None:
-                    etiketler = antrenor_karesi(ant, mp_model, im, t, son, son_mesaj, kayit)
+                    etiketler = antrenor_karesi(ant, mp_model, im, t, son, son_mesaj, kayit,
+                                                dunya=dunya)
                 cizilecek = son
                 if a.aynalama:
                     im = cv2.flip(im, 1)
@@ -476,7 +518,7 @@ def coklu_main(a) -> None:
                 if a.kaydet is not None:
                     if yazici is None:
                         yazici = cv2.VideoWriter(str(a.kaydet), cv2.VideoWriter_fourcc(*"mp4v"),
-                                                 fps if a.video else 15.0,
+                                                 fps if dosya else 15.0,
                                                  (goster.shape[1], goster.shape[0]))
                     yazici.write(goster)
                 if a.pencere:
@@ -495,7 +537,7 @@ def coklu_main(a) -> None:
             mp_model.close()
             if kayit:
                 kayit.close()
-    print(f"{kare_no} kare, gorulen kimlikler: {sorted(hat.kisiler)}")
+    print(f"{kare_no} kare, gorulen kimlikler: {[1] if a.mobil else sorted(hat.kisiler)}")
 
 
 def main(argv=None) -> None:
@@ -507,6 +549,7 @@ def main(argv=None) -> None:
     p.add_argument("--model", required=True, help="MediaPipe pose_landmarker .task")
     p.add_argument("--kamera", type=int, default=0, help="kamera indeksi")
     p.add_argument("--video", type=Path, help="kamera yerine bu videodan oku (deneme icin)")
+    p.add_argument("--akis", help="IP kamera akisi, or. rtsp://kullanici:parola@10.0.0.5:554/stream1")
     p.add_argument("--pencere", action=argparse.BooleanOptionalAction, default=True,
                    help="goruntuyu pencerede goster (--no-pencere: yalniz --kaydet)")
     p.add_argument("--aynalama", action=argparse.BooleanOptionalAction, default=True,
@@ -514,6 +557,8 @@ def main(argv=None) -> None:
     p.add_argument("--kaydet", type=Path, help="islenmis goruntuyu bu .mp4'e de yaz")
     p.add_argument("--el-modeli", type=Path,
                    help="MediaPipe hand_landmarker .task; verilirse parmak eklemleri de cizilir")
+    p.add_argument("--mobil", action="store_true",
+                   help="telefon motoru: tek kisi, yalniz MediaPipe (--antrenor ile; 0041)")
     p.add_argument("--coklu-kisi", action="store_true",
                    help="karedeki herkes (RTMW + takip); --dedektor ve --rtmw gerekli")
     p.add_argument("--dedektor", type=Path, help="YOLOX kisi dedektoru .onnx (--coklu-kisi)")
@@ -531,17 +576,23 @@ def main(argv=None) -> None:
     p.add_argument("--yuzey", choices=("mobil", "salon"), default="salon",
                    help="olay kaynagi: kullanicinin telefonu ya da salon kamerasi")
     p.add_argument("--istasyon", default="istasyon-1", help="salonda istasyon adi")
+    p.add_argument("--cihaz", choices=("auto", "cpu", "mps"), default="auto",
+                   help="RTMW poz modeli: auto = Mac'te CoreML (~2,8x hizli), yoksa CPU")
     p.add_argument("--tespit-sikligi", type=int, default=3,
                    help="dedektor kac karede bir calissin (--coklu-kisi)")
     a = p.parse_args(argv)
+    if a.mobil:
+        if not a.antrenor:
+            p.error("--mobil yalniz --antrenor ile")
+        return coklu_main(a)
     if a.coklu_kisi:
         if not (a.dedektor and a.rtmw):
             p.error("--coklu-kisi icin --dedektor ve --rtmw gerekli")
         return coklu_main(a)
 
-    cap = cv2.VideoCapture(str(a.video) if a.video else a.kamera)
-    if not cap.isOpened() and a.video:
-        raise SystemExit(f"video acilamadi: {a.video}")
+    cap, _, kaynak_adi = kaynak_ac(a)
+    if not cap.isOpened() and (a.video or a.akis):
+        raise SystemExit(f"kaynak acilamadi: {kaynak_adi}")
     if not cap.isOpened():
         raise SystemExit(f"kamera {a.kamera} acilamadi (macOS: Sistem Ayarlari > Gizlilik "
                          "ve Guvenlik > Kamera'dan Terminal/VS Code'a izin verin)")

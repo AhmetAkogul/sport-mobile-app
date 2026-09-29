@@ -206,3 +206,19 @@ def test_diz_parmak_onde_2b_gecince_pozitif():
     kaval = 100.0
     assert diz_parmak_onde_2b(_lunge_2b(60.0), "sag")[0] == pytest.approx((60 - 40) / np.hypot(60, kaval))
     assert diz_parmak_onde_2b(_lunge_2b(0.0), "sag")[0] < 0
+
+
+def test_secilen_model_seyrek_veride_l1_secer_ve_sizmaz():
+    pytest.importorskip("sklearn")
+    from eval.hareket_formu import ADAY_MODELLER, birlesik_kisi_disarida, secilen_model
+    r = np.random.default_rng(1)
+    n = 120
+    y = np.arange(n) % 2 == 1
+    X = np.c_[y * 1.5 + r.normal(0, 0.6, n), r.normal(0, 1, (n, 15))]  # 1 bilgili + 15 gurultu
+    kisi = np.array([f"k{i % 6}" for i in range(n)])
+    m = secilen_model(X, y, kisi)
+    assert m.aday_ in ADAY_MODELLER
+    satir = [{"kisi": k, "yanlis": bool(v), **{f"o{j}": x[j] for j in range(16)}}
+             for k, v, x in zip(kisi, y, X)]
+    sonuc = birlesik_kisi_disarida(satir, [f"o{j}" for j in range(16)], secim=True)
+    assert sonuc["auc"] > 0.8

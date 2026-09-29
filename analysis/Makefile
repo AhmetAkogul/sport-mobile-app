@@ -1,4 +1,4 @@
-.PHONY: kurulum kurulum-dev kontrol test lint kapsam reproduce kilit kilit-surum canli temiz panel antrenor canli-coklu
+.PHONY: kurulum kurulum-dev kontrol test lint kapsam reproduce kilit kilit-surum canli temiz panel antrenor antrenor-mobil canli-coklu
 
 PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python3)
 # MediaPipe ayri ortamda (0008); varsayilan yollar bitirme-capture calisma agaci.
@@ -56,6 +56,11 @@ antrenor:         ## Kameradan cok kisi + hareket + tekrar karari + ipucu (q: ci
 	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) --coklu-kisi --antrenor \
 		--dedektor $(DEDEKTOR) --rtmw $(RTMW_MODEL) --hareket-modeli $(HAREKET_MODELI) \
 		--form-modelleri $(FORM_MODELLERI) --bildirim-kaydi $(OLAY_KAYDI) $(ARGS)
+
+antrenor-mobil:   ## Telefon motoru: tek kisi, yalniz MediaPipe + antrenor (0041; q: cikis)
+	PYTHONPATH=. $(MP_PYTHON) -m mono.canli --model $(MP_MODEL) --mobil --antrenor --yuzey mobil \
+		--hareket-modeli $(HAREKET_MODELI) --form-modelleri $(FORM_MODELLERI) \
+		--bildirim-kaydi $(OLAY_KAYDI) $(ARGS)
 
 panel:            ## Antrenor paneli: $(OLAY_KAYDI) olaylarini http://localhost:8765'te canli gosterir
 	PYTHONPATH=. $(PYTHON) -m mono.olay_servisi --kayit $(OLAY_KAYDI) $(ARGS)

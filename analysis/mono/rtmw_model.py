@@ -24,23 +24,43 @@ from pose3d.tam_vucut import coco_wholebody_poz
 RTMW_GUVEN_ESIGI = 3.5
 
 
+def poz_cihazi(cihaz: str) -> str:
+    """"cpu" | "mps" | "auto" -> rtmlib cihazi. "auto": CoreML varsa "mps", yoksa "cpu".
+
+    Poz modeli CoreML'de M5'te 72,6 -> 25,5 ms (2,8x), nokta farki medyan 0,03 px,
+    en cok 1,5 px (float16). YOLOX dedektoru CoreML'de calismiyor (NMS katmani
+    cikti bicimi), hep CPU'da kalir. Deneyler tekrarlanabilirlik icin "cpu".
+    """
+    if cihaz not in ("cpu", "mps", "auto"):
+        raise ValueError(f"cihaz cpu | mps | auto olmali: {cihaz!r}")
+    if cihaz != "auto":
+        return cihaz
+    try:
+        import onnxruntime
+        return "mps" if "CoreMLExecutionProvider" in onnxruntime.get_available_providers() else "cpu"
+    except ImportError:
+        return "cpu"
+
+
 class RTMWEstimator:
     def __init__(self, detector_path, pose_path, *, threshold=RTMW_GUVEN_ESIGI,
-                 ad="rtmw-x", giris_boyutu=(288, 384)):
+                 ad="rtmw-x", giris_boyutu=(288, 384), cihaz="cpu"):
         if type(threshold) not in (int, float) or not math.isfinite(threshold) or threshold < 0:
             raise ValueError("Guven esigi sonlu ve negatif olmayan bir sayi olmali.")
         for path in (detector_path, pose_path):
             if not Path(path).is_file():
                 raise FileNotFoundError(path)
         from rtmlib import YOLOX, RTMPose
+        self.cihaz = poz_cihazi(cihaz)
         self.model_id = (f"rtmlib-{version('rtmlib')}/{ad}/pose:{file_sha256(pose_path)}"
-                         f"/detector:{file_sha256(detector_path)}")
+                         f"/detector:{file_sha256(detector_path)}"
+                         + ("" if self.cihaz == "cpu" else f"/cihaz:{self.cihaz}"))
         self.threshold = threshold
         self._closed = False
         self._detector = YOLOX(str(detector_path), model_input_size=(640, 640),
                                backend="onnxruntime", device="cpu")
         self._pose = RTMPose(str(pose_path), model_input_size=tuple(giris_boyutu),
-                             to_openpose=False, backend="onnxruntime", device="cpu")
+                             to_openpose=False, backend="onnxruntime", device=self.cihaz)
 
     def kisiler(self, image_bgr, kutular=None):
         """Karedeki her kisi icin TAM_VUCUT Poz2B; `ek["kutu"]` = [x1, y1, x2, y2].

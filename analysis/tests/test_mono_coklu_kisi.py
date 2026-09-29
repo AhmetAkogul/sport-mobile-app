@@ -86,3 +86,11 @@ def test_bytetrack_gercek_kimlik_surekliligi():
     assert all(k == kimlikler[0] for k in kimlikler)
     # 2 s tampon 15 fps'te 30 kare demek (supervision 30 fps birimiyle olcekler)
     assert tk._tracker._t.max_time_lost == 30
+
+
+def test_poz_cihazi_secimi():
+    from mono.rtmw_model import poz_cihazi
+    assert poz_cihazi("cpu") == "cpu" and poz_cihazi("mps") == "mps"
+    assert poz_cihazi("auto") in ("cpu", "mps")
+    with pytest.raises(ValueError):
+        poz_cihazi("gpu")

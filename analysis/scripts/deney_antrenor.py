@@ -26,13 +26,13 @@ import numpy as np  # noqa: E402
 import deney_hareket_formu as hf  # noqa: E402
 import deney_hareket_tanima as ht  # noqa: E402
 from eval.hareket import HareketTanima, siniflandirici  # noqa: E402
-from eval.hareket_formu import risk_kapsama  # noqa: E402
+from eval.hareket_formu import risk_kapsama, secilen_model  # noqa: E402
 from mono.antrenor import Antrenor  # noqa: E402
 
 ADLAR = hf.ADLAR
 
 
-def form_modelleri(haric: str, tel_hepsi, sayim_hepsi):
+def form_modelleri(haric: str, tel_hepsi, sayim_hepsi, secim: bool = False):
     modeller = {}
     for ex, ad in ADLAR.items():
         tel = [s for s in tel_hepsi[ex] if s["kisi"] != haric]
@@ -40,12 +40,13 @@ def form_modelleri(haric: str, tel_hepsi, sayim_hepsi):
         gruplar = {}
         for grup in ("front", "half-profile", "profile"):
             g = [s for s in tel if s["yon"] == grup]
-            deg = hf.birlesik_kisi_disarida(g, olculer) if len(g) >= 20 else None
+            deg = hf.birlesik_kisi_disarida(g, olculer, secim=secim) if len(g) >= 20 else None
             kayit = {"auc": None if deg is None else deg["auc"], "n": len(g)}
             if deg and deg["auc"] is not None and deg["auc"] >= hf.OLCULEBILIR_AUC:
                 X = np.array([[s[o] for o in olculer] for s in g], float)
                 y = np.array([s["yanlis"] for s in g], bool)
-                kayit["model"] = hf.birlesik_model().fit(X, y)
+                kayit["model"] = (secilen_model(X, y, np.array([s["kisi"] for s in g])) if secim
+                                  else hf.birlesik_model().fit(X, y))
             gruplar[grup] = kayit
         sayac = hf._esikler([v for v in sayim_hepsi[ex] if v["kisi"] != haric])
         modeller[ex] = {"ad": ad, "olculer": olculer, "sayac": sayac, "gruplar": gruplar}
@@ -57,7 +58,13 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--kisiler", nargs="*", help="yalniz bu kisiler (paralel kosum icin)")
     ap.add_argument("--birlestir", action="store_true", help="parca sonuclarini birlestir")
+    ap.add_argument("--secim", action=argparse.BooleanOptionalAction, default=True,
+                    help="birlesik model ic ice kisi-disarida secilir (0038; --no-secim: sabit L2)")
+    ap.add_argument("--geri-s", type=float, help="kilitte geriye donuk tampon (mono.antrenor.GERI_S)")
     arg = ap.parse_args()
+    import mono.antrenor as ma
+    if arg.geri_s is not None:
+        ma.GERI_S = arg.geri_s
     if arg.birlestir:
         return ozetle(*parcalari_oku())
     alt = hf.alt_turler()
@@ -68,12 +75,13 @@ def main():
     print(f"{len(X)} pencere hazir", flush=True)
     top = defaultdict(lambda: defaultdict(int))
     risk = defaultdict(list)               # hareket -> [(p_yanlis, gercek yanlis)]
+    yanlis_kilit = []                      # (video-kamera, gercek, kilitlenen)
     ornek = []
     for k in sorted(set(kisi)):
         if arg.kisiler and k not in arg.kisiler:
             continue
         tanima_modeli = siniflandirici().fit(X[kisi != k], y[kisi != k])
-        modeller = form_modelleri(k, tel_hepsi, sayim_hepsi)
+        modeller = form_modelleri(k, tel_hepsi, sayim_hepsi, secim=arg.secim)
         for video, (kisi_id, ex, reps) in sorted(seg.items()):
             if kisi_id != k or ex not in ADLAR:
                 continue
@@ -93,6 +101,8 @@ def main():
                 ilk = next((m["hareket"] for m in mesaj if m["tur"] == "hareket"), None)
                 t["video"] += 1
                 t["kilit_dogru"] += int(ilk == ad)
+                if ilk != ad:
+                    yanlis_kilit.append((f"{video}-{kam}", ad, ilk))
                 bildirilen = [m for m in mesaj if m["tur"] in ("tekrar", "olculemez")]
                 dogru_hareket = [m for m in bildirilen if m["hareket"] == ad]
                 t["yanlis_harekette_tekrar"] += len(bildirilen) - len(dogru_hareket)
@@ -122,9 +132,11 @@ def main():
         print(f"kisi {k} bitti", flush=True)
     ad_ = "_".join(arg.kisiler) if arg.kisiler else "hepsi"
     Path(f"out/antrenor_parca_{ad_}.json").write_text(json.dumps(
-        {"top": {a: dict(v) for a, v in top.items()}, "ornek": ornek, "risk": risk},
+        {"top": {a: dict(v) for a, v in top.items()}, "ornek": ornek, "risk": risk,
+         "yanlis_kilit": yanlis_kilit},
         ensure_ascii=False))
     if not arg.kisiler:
+        risk["_yanlis_kilit"] = yanlis_kilit
         ozetle(top, ornek, risk)
 
 
@@ -137,6 +149,7 @@ def parcalari_oku():
                 top[a][k] += x
         for a, v in d.get("risk", {}).items():
             risk[a] += v
+        risk["_yanlis_kilit"] += d.get("yanlis_kilit", [])
         ornek += d["ornek"]
     return top, ornek[:12], risk
 
@@ -154,11 +167,13 @@ def ozetle(top, ornek, risk=None):
                   "iyi_ozgullugu": oran(t["dogru_onaylanan"], t["dogru_etiket"]),
                   "karar_verilen_tekrar": t["karar"]}
              for ad, t in top.items()}
+    yanlis_kilit = (risk or {}).pop("_yanlis_kilit", [])
     for ad, v in (risk or {}).items():
         if ad in sonuc and v:
             p, y = zip(*v)
             sonuc[ad]["risk_kapsama"] = risk_kapsama(p, y)
-    Path("out/antrenor.json").write_text(json.dumps({"ozet": sonuc, "ornek_bildirim": ornek},
+    Path("out/antrenor.json").write_text(json.dumps({"ozet": sonuc, "ornek_bildirim": ornek,
+                                                     "yanlis_kilit": yanlis_kilit},
                                                     ensure_ascii=False, indent=1))
     for ad, v in sonuc.items():
         print(ad, v)
