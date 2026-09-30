@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -43,6 +44,21 @@ DENEY_CIKTILARI = (
 # yine yakalar.
 BAGIL_TOLERANS = 1e-4
 MUTLAK_TOLERANS = 1e-9
+
+# Platforma duyarli alanlar: kilitte tutulur ama karsilastirilmaz. Sentetik
+# kalibrasyonun dar poz dagilimi kasitli olarak kotu kosullanmis; 0,5 ve 1,0 px
+# gurultude 15 tekrarin birinde cozucu Mac ARM'de iraksiyor (rms_ortalama
+# 10112), Linux x86'da iraksamiyor (57). Bu tolerans meselesi degil, farkli
+# yerel cozum. Raporlanan sayilar (fx hatasi, poz cesitliligi kazanci) bu
+# alanlarda degil ve iki platformda da 1e-4 icinde ayni (30 Eylul, CI).
+PLATFORMA_DUYARLI = (
+    re.compile(r"sentetik_kalibrasyon\.json kosular\[[34]\]\."
+               r"(rms_ortalama|parametreler\.taban_\d+\..+)$"),
+)
+
+
+def _platforma_duyarli(dosya: str, anahtar: str) -> bool:
+    return any(d.match(f"{dosya} {anahtar}") for d in PLATFORMA_DUYARLI)
 
 
 def duzlestir(deger, on: str = "") -> dict[str, float | None]:
@@ -97,6 +113,8 @@ def karsilastir(beklenen: dict, gozlenen: dict) -> list[str]:
                 farklar.append(f"{dosya} {anahtar}: yeni alan = {g[anahtar]}")
             elif anahtar not in g:
                 farklar.append(f"{dosya} {anahtar}: alan kayboldu (kilit {b[anahtar]})")
+            elif _platforma_duyarli(dosya, anahtar):
+                continue
             elif not _esit(b[anahtar], g[anahtar]):
                 farklar.append(f"{dosya} {anahtar}: kilit {b[anahtar]} -> simdi {g[anahtar]}")
     return farklar
