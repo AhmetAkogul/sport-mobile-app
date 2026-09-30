@@ -1,0 +1,4 @@
+# Gelistirme araclari: stil denetimi ve kapsam olcumu. Calisma zamani icin gerekmez.
+-r requirements.txt
+ruff==0.12.0
+pytest-cov==7.1.0

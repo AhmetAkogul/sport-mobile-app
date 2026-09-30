@@ -1,0 +1,29 @@
+# Uzak depo acildiginda her push/PR'da calisir (su an uzak depo yok, H3).
+# Kilitli surumlerle kurulum -> ortam kontrolu -> lint -> testler -> sayi kilidi.
+name: test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Kurulum (kilitli surumler)
+        run: |
+          python -m pip install -r requirements-lock.txt
+          python -m pip install ruff==0.12.0
+      - name: Ortam kontrolu
+        run: python scripts/ortam_kontrol.py
+      - name: Lint
+        run: python -m ruff check .
+      - name: Testler
+        run: python -m pytest -q -rs
+      - name: Rapordaki sayilar (make reproduce + sayi kilidi)
+        run: make reproduce PYTHON=python

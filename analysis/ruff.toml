@@ -1,0 +1,4 @@
+# Stil denetimi: ruff varsayilan kurallari (pyflakes + pycodestyle hata sinifi).
+# Satir uzunlugu zorlanmiyor; kod tabani 100 civarinda tutuyor.
+target-version = "py313"
+extend-exclude = [".venv", "data", "out", ".freebuff"]
