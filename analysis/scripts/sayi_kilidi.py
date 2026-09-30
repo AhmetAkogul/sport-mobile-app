@@ -8,7 +8,7 @@ izlenen `docs/deney/sayi-kilidi.json` ile karsilastirir.
     python scripts/sayi_kilidi.py            # denetle; sapma varsa cikis kodu 1
     python scripts/sayi_kilidi.py --guncelle # kilidi bilincli olarak yenile
 
-Kilit yenilemek bir **karar**dir: degisen sayi CLAUDE.md tablosunda ve ilgili
+Kilit yenilemek bir **karar**dir: degisen sayi bulgu tablosunda ve ilgili
 deney kaydinda da guncellenmeli, commit mesajinda gerekcesi yazilmali.
 """
 from __future__ import annotations
@@ -37,9 +37,11 @@ DENEY_CIKTILARI = (
 )
 
 # Ayni makinede cikti bit bit aynidir; baska platformda BLAS/libm farki kucuk
-# sapma uretebilir. Raporlanan sayilar 2-3 anlamli basamakla yazildigi icin
-# 1e-6 bagil tolerans rapora yansiyacak her degisikligi yakalar.
-BAGIL_TOLERANS = 1e-6
+# sapma uretir: GitHub'in Linux x86 makinesinde Mac ARM kilidine gore bagil
+# 1e-6..5e-6 fark goruldu (30 Eylul). Raporlanan sayilar 2-3 anlamli basamakla
+# yazildigi icin 1e-4 (%0,01) bagil tolerans rapora yansiyacak her degisikligi
+# yine yakalar.
+BAGIL_TOLERANS = 1e-4
 MUTLAK_TOLERANS = 1e-9
 
 
@@ -110,7 +112,7 @@ def main(argv: list[str] | None = None) -> int:
     gozlenen = topla(a.out)
     if a.guncelle and a.kilit.is_file():
         # Yenilemeden once dokum: "yeni alan" ile "degisen sayi" ayni sey
-        # degildir. Ikincisi CLAUDE.md ve deney kaydinda da guncellenmeli.
+        # degildir. Ikincisi bulgu tablosunda ve deney kaydinda da guncellenmeli.
         farklar = karsilastir(json.loads(a.kilit.read_text(encoding="utf-8")), gozlenen)
         # Yeni alan ve kilitte hic olmayan yeni dosya "eklenen"dir; gerisi degisen.
         degisen = [f for f in farklar if "yeni alan" not in f and "kilitte yok" not in f]
@@ -136,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
             print("  " + satir, file=sys.stderr)
         if len(farklar) > 40:
             print(f"  ... ve {len(farklar) - 40} fark daha", file=sys.stderr)
-        print("Degisiklik bilincliyse: CLAUDE.md + deney kaydini guncelleyin, "
+        print("Degisiklik bilincliyse: bulgu tablosu + deney kaydini guncelleyin, "
               "sonra `python scripts/sayi_kilidi.py --guncelle`.", file=sys.stderr)
         return 1
     n = sum(len(v) for v in gozlenen.values())
