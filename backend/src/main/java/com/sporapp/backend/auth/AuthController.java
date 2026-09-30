@@ -1,4 +1,4 @@
-package com.sporapp.backend.user;
+package com.sporapp.backend.auth;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -7,6 +7,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.sporapp.backend.user.UserService;
 import com.sporapp.backend.user.dto.AuthResponse;
 import com.sporapp.backend.user.dto.LoginRequest;
 import com.sporapp.backend.user.dto.RegisterRequest;
@@ -30,13 +31,13 @@ public class AuthController {
         return ResponseEntity.status(HttpStatus.CREATED).body(response); // HTTP response oluştur
     }
 
-      @PostMapping("/login")
+    @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(userService.login(request));
     }
 }
 
-/* 
+/*
  @valid = registerRequestten gelen verilerin doğruluğunu kontrol ediyor
 
  method, şeklinde olduğundan

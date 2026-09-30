@@ -8,9 +8,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.sporapp.backend.common.exception.EmailAlreadyExistsException;
 import com.sporapp.backend.common.exception.InvalidCredentialsException;
+import com.sporapp.backend.common.exception.InvalidPasswordException;
+import com.sporapp.backend.common.exception.ResourceNotFoundException;
 import com.sporapp.backend.security.JwtService;
 import com.sporapp.backend.user.dto.AuthResponse;
+import com.sporapp.backend.user.dto.ChangePasswordRequest;
 import com.sporapp.backend.user.dto.LoginRequest;
+import com.sporapp.backend.user.dto.ProfileUpdateRequest;
 import com.sporapp.backend.user.dto.RegisterRequest;
 import com.sporapp.backend.user.dto.UserResponse;
 
@@ -62,5 +66,41 @@ public class UserService {
 
         String token = jwtService.generateToken(user); // imzalı token üret
         return AuthResponse.bearer(token, jwtService.getExpirationSeconds(), user);
+    }
+
+    @Transactional(readOnly = true)
+    public UserResponse getProfile(Long userId) { // sadece oku → salt okunur transaction
+        return UserResponse.from(findUser(userId));
+    }
+
+    @Transactional
+    public UserResponse updateProfile(Long userId, ProfileUpdateRequest request) { // tam gövde gelir, alanlar üzerine yazılır
+        User user = findUser(userId);
+
+        user.setName(request.name().trim());
+        user.setAge(request.age());       // null gelirse alan temizlenir (PUT semantiği)
+        user.setGender(request.gender()); // null gelirse alan temizlenir
+        user.setHeight(request.height());
+        user.setWeight(request.weight());
+        // email ve password bilinçli olarak burada yok — bu endpoint onları değiştirmez
+
+        return UserResponse.from(user); // save() yok: entity managed, Hibernate UPDATE'i flush'ta kendi atar
+    }
+
+
+    @Transactional
+    public void changePassword(Long userId, ChangePasswordRequest request) {
+        User user = findUser(userId);
+
+        if (!passwordEncoder.matches(request.currentPassword(), user.getPassword())) { // mevcut şifre doğrulaması
+            throw new InvalidPasswordException();
+        }
+
+        user.setPassword(passwordEncoder.encode(request.newPassword())); // yeni şifre hash'lenir, düz metin asla saklanmaz
+    }
+
+    private User findUser(Long userId) { // üç metot da aynı "bul veya 404 at" işini yapıyor → tekrar yazmayalım
+        return userRepository.findById(userId)
+                .orElseThrow(() -> new ResourceNotFoundException("Kullanıcı bulunamadı"));
     }
 }
