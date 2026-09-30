@@ -1,0 +1,1346 @@
+{
+ "surum": 1,
+ "aciklama": "ORNEK -- gercek veri degil; alan bicimini gostermek icin. Hash'ler sifir.",
+ "kalibrasyonlar": [
+  {
+   "id": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T09:00:00+03:00",
+   "kayit_dosyasi": "data/kalibrasyon/K-2026-10-01.json"
+  }
+ ],
+ "kisiler": [
+  {
+   "kod": "P01"
+  },
+  {
+   "kod": "P02"
+  },
+  {
+   "kod": "P03"
+  },
+  {
+   "kod": "P04"
+  },
+  {
+   "kod": "P05"
+  },
+  {
+   "kod": "P06"
+  }
+ ],
+ "oturumlar": [
+  {
+   "id": "P01-S1",
+   "kisi": "P01",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 0,
+    "mesafe_m": 3.0,
+    "isik": "normal",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S1/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S1/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S1/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S1/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S1/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P01-S2",
+   "kisi": "P01",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 45,
+    "mesafe_m": 3.0,
+    "isik": "los",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S2/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S2/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S2/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S2/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P01-S2/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P02-S1",
+   "kisi": "P02",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 0,
+    "mesafe_m": 3.0,
+    "isik": "normal",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S1/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S1/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S1/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S1/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S1/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P02-S2",
+   "kisi": "P02",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 45,
+    "mesafe_m": 3.0,
+    "isik": "los",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S2/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S2/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S2/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S2/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P02-S2/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P03-S1",
+   "kisi": "P03",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 0,
+    "mesafe_m": 3.0,
+    "isik": "normal",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S1/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S1/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S1/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S1/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S1/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P03-S2",
+   "kisi": "P03",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 45,
+    "mesafe_m": 3.0,
+    "isik": "los",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S2/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S2/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S2/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S2/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P03-S2/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P04-S1",
+   "kisi": "P04",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 0,
+    "mesafe_m": 3.0,
+    "isik": "normal",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S1/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S1/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S1/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S1/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S1/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P04-S2",
+   "kisi": "P04",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 45,
+    "mesafe_m": 3.0,
+    "isik": "los",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S2/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S2/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S2/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S2/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P04-S2/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P05-S1",
+   "kisi": "P05",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 0,
+    "mesafe_m": 3.0,
+    "isik": "normal",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S1/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S1/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S1/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S1/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S1/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P05-S2",
+   "kisi": "P05",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 45,
+    "mesafe_m": 3.0,
+    "isik": "los",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S2/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S2/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S2/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S2/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P05-S2/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P06-S1",
+   "kisi": "P06",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 0,
+    "mesafe_m": 3.0,
+    "isik": "normal",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S1/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S1/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S1/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S1/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S1/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  },
+  {
+   "id": "P06-S2",
+   "kisi": "P06",
+   "kalibrasyon": "K-2026-10-01",
+   "tarih_iso": "2026-10-01T10:00:00+03:00",
+   "kosul": {
+    "aci_derece": 45,
+    "mesafe_m": 3.0,
+    "isik": "los",
+    "ortulme": "yok"
+   },
+   "cihazlar": [
+    {
+     "id": "kam0",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S2/kam0.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam1",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S2/kam1.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam2",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S2/kam2.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "kam3",
+     "rol": "duzenek",
+     "model": "ornek-kamera",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S2/kam3.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+     "id": "tel",
+     "rol": "telefon",
+     "model": "ornek-telefon",
+     "cozunurluk": [
+      1920,
+      1080
+     ],
+     "fps": 60,
+     "video_dosyasi": "data/ham/P06-S2/tel.mp4",
+     "video_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "referans_ucgenleme": [
+    "kam0",
+    "kam1",
+    "kam2",
+    "kam3"
+   ],
+   "tekrarlar": [
+    {
+     "no": 0,
+     "baslangic_ms": 1000,
+     "bitis_ms": 3500
+    },
+    {
+     "no": 1,
+     "baslangic_ms": 5000,
+     "bitis_ms": 7500
+    },
+    {
+     "no": 2,
+     "baslangic_ms": 9000,
+     "bitis_ms": 11500
+    },
+    {
+     "no": 3,
+     "baslangic_ms": 13000,
+     "bitis_ms": 15500
+    },
+    {
+     "no": 4,
+     "baslangic_ms": 17000,
+     "bitis_ms": 19500
+    }
+   ],
+   "kemik_uzunlugu": null,
+   "kemik_uzunlugu_kaynagi": null
+  }
+ ],
+ "teste_ayrilan_kosullar": {
+  "isik": [
+   "los"
+  ]
+ }
+}

@@ -1,0 +1,39 @@
+# --- VERI: asla git'e girmez ---
+data/
+/data
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.raw
+*.npy
+*.npz
+
+# --- Python ---
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.venv/
+.venv
+venv/
+venv
+.env
+*.egg-info/
+
+# --- Isletim sistemi / editor ---
+.DS_Store
+.vscode/
+.idea/
+
+# --- Cikti ve gecici ---
+out/
+build/
+*.log
+.freebuff/
+
+# --- Bu projeye ait olmayan dosyalar ---
+capstone-catalog.bak.html
+
+# Kapsam olcumu (make kapsam)
+.coverage
+htmlcov/

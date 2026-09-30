@@ -1,0 +1,8 @@
+# İsteğe bağlı deney ortamı; ana kalibrasyon ortamına otomatik kurulmaz.
+-r ../requirements.txt
+mediapipe==0.10.35
+# Cok kisi / tam vucut (0036): canli mod tek ortamda RTMW + takip calistirir.
+onnxruntime==1.30.0
+supervision==0.30.5
+# rtmlib==0.0.16 AYRICA --no-deps kurulur (kendi listesi opencv-python ceker, 0033):
+#   pip install --no-deps rtmlib==0.0.16 tqdm
