@@ -1,4 +1,3 @@
-"""workoutplan/ asamasi uctan uca testi."""
 import json
 import urllib.error
 import urllib.request
