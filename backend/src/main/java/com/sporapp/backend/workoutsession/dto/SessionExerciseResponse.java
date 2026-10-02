@@ -1,5 +1,7 @@
 package com.sporapp.backend.workoutsession.dto;
 
+import java.util.List;
+
 import com.sporapp.backend.exercise.Equipment;
 import com.sporapp.backend.exercise.MuscleGroup;
 import com.sporapp.backend.workoutsession.SessionExercise;
@@ -13,7 +15,8 @@ public record SessionExerciseResponse(
         Integer position,
         Integer targetSets,
         Integer targetReps,
-        Integer targetRestSeconds
+        Integer targetRestSeconds,
+        List<ExerciseSetResponse> sets
 ) {
 
     public static SessionExerciseResponse from(SessionExercise sessionExercise) {
@@ -26,7 +29,10 @@ public record SessionExerciseResponse(
                 sessionExercise.getPosition(),
                 sessionExercise.getTargetSets(),
                 sessionExercise.getTargetReps(),
-                sessionExercise.getTargetRestSeconds()
+                sessionExercise.getTargetRestSeconds(),
+                sessionExercise.getSets().stream()
+                        .map(ExerciseSetResponse::from)
+                        .toList()
         );
     }
 }

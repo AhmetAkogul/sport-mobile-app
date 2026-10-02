@@ -1,13 +1,19 @@
 package com.sporapp.backend.workoutsession;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.sporapp.backend.common.BaseEntity;
 import com.sporapp.backend.exercise.Exercise;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.OneToMany;
+import jakarta.persistence.OrderBy;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.Setter;
@@ -37,4 +43,9 @@ public class SessionExercise extends BaseEntity {
 
     @Column(name = "target_rest_seconds")
     private Integer targetRestSeconds;
+
+    @OneToMany(mappedBy = "sessionExercise", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("setNumber ASC, id ASC")
+    private List<ExerciseSet> sets = new ArrayList<>();
+
 }
