@@ -10,6 +10,7 @@ import java.util.Set;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.sporapp.backend.calories.CalorieCalculator;
 import com.sporapp.backend.common.exception.ConflictException;
 import com.sporapp.backend.common.exception.InvalidRequestException;
 import com.sporapp.backend.common.exception.ResourceNotFoundException;
@@ -180,6 +181,17 @@ public class WorkoutSessionService {
         if (session.getFinishedAt() == null) { // yumusak koruma: ilk bitis saati degismez
             session.setFinishedAt(Instant.now());
         }
+
+        // kcal bitiste hesaplanip saklanir: kilo/MET sonradan degisse gecmis bozulmaz
+        List<Exercise> exercises = session.getExercises().stream()
+                .map(se -> se.getExercise())
+                .toList();
+
+        session.setCalories(CalorieCalculator.calculate(
+                exercises,
+                session.getStartedAt(),
+                session.getFinishedAt(),
+                session.getUser().getWeight()));
 
         return detail(userId, sessionId);
     }

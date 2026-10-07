@@ -1,5 +1,7 @@
 package com.sporapp.backend.exercise;
 
+import java.math.BigDecimal;
+
 import com.sporapp.backend.common.BaseEntity;
 
 import jakarta.persistence.Column;
@@ -29,4 +31,9 @@ public class Exercise extends BaseEntity { // baseentity içindeki değişkenler
 
     @Column(length = 500)
     private String description;
+
+    // Compendium of Physical Activities MET degeri.
+    // NULL ise MetValues sinifi kas grubuna gore varsayilan kullanir.
+    @Column(name = "met_value", precision = 3, scale = 1)
+    private BigDecimal metValue;
 }

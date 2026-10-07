@@ -1,5 +1,6 @@
 package com.sporapp.backend.workoutsession.dto;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
@@ -13,6 +14,7 @@ public record WorkoutSessionResponse(
         Instant startedAt,
         Instant finishedAt,
         String note,
+        BigDecimal calories,
         List<SessionExerciseResponse> exercises
 ) {
 
@@ -25,6 +27,7 @@ public record WorkoutSessionResponse(
                 session.getStartedAt(),
                 session.getFinishedAt(),
                 session.getNote(),
+                session.getCalories(),
                 session.getExercises().stream().map(SessionExerciseResponse::from).toList()
         );
     }

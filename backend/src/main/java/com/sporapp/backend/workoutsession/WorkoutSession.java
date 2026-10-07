@@ -1,5 +1,6 @@
 package com.sporapp.backend.workoutsession;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -42,6 +43,11 @@ public class WorkoutSession extends BaseEntity {
 
     @Column(length = 500)
     private String note;
+
+    // finish'te hesaplanip saklanir. NULL = hesaplanmadi
+    // (seans bitmemis, kilo girilmemis veya ozellik gelmeden once bitmis)
+    @Column(precision = 7, scale = 1)
+    private BigDecimal calories;
 
     @OneToMany(mappedBy = "session", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("position ASC, id ASC")

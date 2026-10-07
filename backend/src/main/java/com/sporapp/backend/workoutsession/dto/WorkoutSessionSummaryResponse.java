@@ -1,5 +1,6 @@
 package com.sporapp.backend.workoutsession.dto;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 
 public record WorkoutSessionSummaryResponse(
@@ -9,5 +10,6 @@ public record WorkoutSessionSummaryResponse(
         Instant startedAt,
         Instant finishedAt,
         Long exerciseCount,
-        String note
+        String note,
+        BigDecimal calories
 ) {}

@@ -15,12 +15,12 @@ public interface WorkoutSessionRepository extends JpaRepository<WorkoutSession, 
 
     @Query("""
             SELECT new com.sporapp.backend.workoutsession.dto.WorkoutSessionSummaryResponse(
-                s.id, p.id, p.name, s.startedAt, s.finishedAt, COUNT(se), s.note)
+                s.id, p.id, p.name, s.startedAt, s.finishedAt, COUNT(se), s.note, s.calories)
             FROM WorkoutSession s
             LEFT JOIN s.plan p
             LEFT JOIN s.exercises se
             WHERE s.user.id = :userId
-            GROUP BY s.id, p.id, p.name, s.startedAt, s.finishedAt, s.note
+            GROUP BY s.id, p.id, p.name, s.startedAt, s.finishedAt, s.note, s.calories
             ORDER BY s.startedAt DESC
             """)
     List<WorkoutSessionSummaryResponse> findSummariesByUserId(@Param("userId") Long userId);
